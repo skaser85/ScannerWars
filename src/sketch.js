@@ -12,7 +12,7 @@ const game_state = {
 let game = {
   state: game_state.menu,
   image_dim: 75,
-  box_velocity: 20,
+  box_velocity: 10,
 }
 
 const DEFAULT_BUTTON_CONFIG = {
@@ -49,7 +49,8 @@ engine.velocityIteratrions = 10;
 const thickness = 10;
 const walls = [
   Bodies.rectangle(SCREEN_WIDTH/2, -thickness/2, SCREEN_WIDTH, thickness, { isStatic: true }),             // top
-  Bodies.rectangle(SCREEN_WIDTH/2, SCREEN_HEIGHT + thickness/2, SCREEN_WIDTH, thickness, { isStatic: true }),    // bottom Bodies.rectangle(-thickness/2, SCREEN_HEIGHT/2, thickness, SCREEN_HEIGHT, { isStatic: true }),           // left
+  Bodies.rectangle(SCREEN_WIDTH/2, SCREEN_HEIGHT + thickness/2, SCREEN_WIDTH, thickness, { isStatic: true }),    // bottom
+  Bodies.rectangle(-thickness/2, SCREEN_HEIGHT/2, thickness, SCREEN_HEIGHT, { isStatic: true }),           // left
   Bodies.rectangle(SCREEN_WIDTH + thickness/2, SCREEN_HEIGHT/2, thickness, SCREEN_HEIGHT, { isStatic: true })     // right
 ];
 World.add(engine.world, walls);
@@ -178,27 +179,29 @@ function mouseClicked() {
       return;
     }
   }
+  
+  for (let q of num_qrcodes) {
+    if (q.containsPoint(mouseX, mouseY))
+      q.tint = !q.tint;
+  }
+  for (let d of alpha_dms) {
+    if (d.containsPoint(mouseX, mouseY))
+      d.tint = !d.tint;
+  }
+
 }
 
 function maxBoxVelocityStepperIncrButtonAction() {
   game.box_velocity += 1;
-  for (let q of num_qrcodes) {
-      q.updateVelocity(1);
-  }
-    for (let d of alpha_dms) {
-      d.updateVelocity(1);
-  }
+  for (let q of num_qrcodes) q.updateVelocity(1, "delta");
+  for (let d of alpha_dms)  d.updateVelocity(1, "delta");
 }
 
 function maxBoxVelocityStepperDecrButtonAction() {
-  game.box_velocity -= 1;
-  if (game.box_velocity == 0) game.box_velocity = 1;
-  for (let q of num_qrcodes) {
-      q.updateVelocity(-1);
-  }
-    for (let d of alpha_dms) {
-      d.updateVelocity(-1);
-  }
+  game.box_velocity = Math.max(1, game.box_velocity - 1);
+  // clamp every body to the new global limit
+  for (let q of num_qrcodes) q.updateVelocity(game.box_velocity, "limit");
+  for (let d of alpha_dms)  d.updateVelocity(game.box_velocity, "limit");
 }
 
 class Button {
@@ -299,6 +302,7 @@ class QRImage {
   constructor(filePath, x, y, clr) {
     this.image = loadImage(filePath);
     this.color = clr;
+    this.tint = false;
     this.box = Bodies.rectangle(x, y, game.image_dim, game.image_dim, {
       friction: 0,
       frictionAir: 0,
@@ -312,23 +316,52 @@ class QRImage {
     });
     World.add(engine.world, this.box);
   }
+  
+  updateVelocity(deltaOrNewLimit, mode = "delta") {
+    const body = this.box;
+    let vx = body.velocity.x, vy = body.velocity.y;
+    let speed = Math.hypot(vx, vy);
 
-  updateVelocity(amt) {
-    let vx = this.box.velocity.x + amt;
-    if (vx < 1) vx = 1;
-    if (vx > game.box_velocity) vx = game.box_velocity;
-    let vy = this.box.velocity.y + amt;
-    if (vy < 1) vy = 1;
-    if (vy > game.box_velocity) vy = game.box_velocity;
-    Body.setVelocity(this.box, { x: vx, y: vy });
+    const setFromAngleMag = (angle, mag) => Body.setVelocity(body, { x: Math.cos(angle) * mag, y: Math.sin(angle) * mag });
+
+    if (speed === 0) {
+      const angle = Math.random() * Math.PI * 2;
+      const mag = Math.max(1, Math.min(game.box_velocity, (mode === "limit" ? deltaOrNewLimit : game.box_velocity)));
+      setFromAngleMag(angle, mag);
+      return;
+    }
+
+    const angle = Math.atan2(vy, vx);
+
+    if (mode === "limit") {
+      const newLimit = Math.max(1, deltaOrNewLimit);
+      const newSpeed = Math.min(speed, newLimit);
+      setFromAngleMag(angle, newSpeed);
+    } else {
+      const newSpeed = Math.max(1, Math.min(game.box_velocity, speed + deltaOrNewLimit));
+      setFromAngleMag(angle, newSpeed);
+    }
+  }
+
+  containsPoint(mx, my) {
+    const cx = this.box.position.x, cy = this.box.position.y;
+    const angle = this.box.angle;
+    const dx = mx - cx, dy = my - cy;
+    const rx = dx * Math.cos(-angle) - dy * Math.sin(-angle);
+    const ry = dx * Math.sin(-angle) + dy * Math.cos(-angle);
+    const half = game.image_dim / 2;
+    return rx > -half && rx < half && ry > -half && ry < half;
   }
 
   draw() {
+
     push();
     translate(this.box.position.x, this.box.position.y);
     rotate(this.box.angle);
     imageMode(CENTER);
-    //tint(this.color);
+    noTint();
+    if (this.tint)
+      tint(this.color);
     image(this.image, 0, 0, game.image_dim, game.image_dim);
     pop();
   }
