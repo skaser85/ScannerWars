@@ -159,8 +159,8 @@ function keyPressed() {
     } else if (game.state === game_state.play) {
       game.state = game_state.menu;
     }
+    return false;
   }
-  return false;
 }
 
 function mouseClicked() {
@@ -260,8 +260,8 @@ class Button {
 class Stepper {
   constructor(text, incr_action, decr_action, button_config, stepper_config) {
     this.text = text;
-    this.incr = new Button("+", incr_action, getDefaultButtonConfigClone());
-    this.decr = new Button("-", decr_action, getDefaultButtonConfigClone());
+    this.incr = new Button("+", incr_action, button_config ? button_config : getDefaultButtonConfigClone());
+    this.decr = new Button("-", decr_action, button_config ? button_config : getDefaultButtonConfigClone());
     this.config = stepper_config ? stepper_config : getDefaultStepperConfigClone();
   }
 
@@ -367,7 +367,7 @@ class QRImage {
   }
 }
 
-/*
+
 navigator.mediaDevices.enumerateDevices().then((devices) => {
   devices.forEach((device) => {
     console.log(device); // an InputDeviceInfo object if the device is an input device, otherwise a MediaDeviceInfo object.
@@ -378,4 +378,3 @@ navigator.mediaDevices.enumerateDevices().then((devices) => {
   let devices = await navigator.usb.getDevices();
   console.log("Devices: ", devices);
 })();
-*/
