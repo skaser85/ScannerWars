@@ -1,2 +1,5 @@
 *.pem
-node_modules/
+p5/node_modules/
+raylib/nob
+raylib/nob.old
+raylib/main
