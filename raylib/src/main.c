@@ -21,7 +21,10 @@
 typedef struct {
   Vector2 pos;
   Vector2 velo;
+  String_View *name;
+  int value;
   Texture2D tex;
+  bool living;
 } Barcode;
 
 typedef struct {
@@ -66,6 +69,9 @@ int get_random_non_zero_int(int _min, int _max) {
 }
 
 void load_barcodes(const char* fp, Barcodes *bars) {
+  UNUSED(fp);
+  UNUSED(bars);
+  /*
   FilePathList files = LoadDirectoryFiles(fp);
   for (unsigned int i = 0; i < files.count; ++i) {
     const char *f = files.paths[i];
@@ -73,7 +79,6 @@ void load_barcodes(const char* fp, Barcodes *bars) {
     ImageResize(&img, BARCODE_SIZE, BARCODE_SIZE);
     Texture2D tex = LoadTextureFromImage(img);
     UnloadImage(img);
-
     Barcode b = (Barcode) { 
       (Vector2) { get_random_non_zero_int(100, GetScreenWidth() - 500), 
         get_random_non_zero_int(100, GetScreenHeight() - 500) },
@@ -83,22 +88,34 @@ void load_barcodes(const char* fp, Barcodes *bars) {
     };
     da_append(bars, b);
   }
+  */
 }
 
-String_View *alloc_string_view() {
+String_View *alloc_string_view(const char* text) {
   String_View *sv = (String_View*)malloc(sizeof(String_View));
   memset(sv, 0, sizeof(*sv));
 
+  if (text) {
+    sv->count = strlen(text);
+    sv->data = text;
+  }
   return sv;
 }
 
-Scan *alloc_scan() {
+Scan *alloc_scan(const char* text) {
   Scan *s = (Scan*)malloc(sizeof(Scan));
   memset(s, 0, sizeof(*s));
 
-  s->sv = alloc_string_view();
+  s->sv = alloc_string_view(text);
 
   return s;
+}
+
+Barcode *alloc_barcode() {
+  Barcode *b = (Barcode*)malloc(sizeof(Barcode));
+  memset(b, 0, sizeof(*b));
+
+  return b;
 }
 
 Scan *process_scan(String_Builder sb) {
@@ -126,24 +143,24 @@ Scan *process_scan(String_Builder sb) {
     }
   }
 
-  String_View *sv = alloc_string_view();
-  sv->count = sb.count;
-  sv->data = sb.items; 
+  String_View *sv = alloc_string_view(temp_sv_to_cstr(sv_from_parts(sb.items, sb.count)));
   *sv = sv_chop_right(sv, sb.count-2);
 
-  Scan *s = alloc_scan();
+  Scan *s = alloc_scan(temp_sv_to_cstr(*sv));
   s->prefix = prefix;
   s->sv = sv;
   return s;
 
 }
 
-void test() {
-  
+Barcode *generate_qr_barcode(const char* text, int value) {
+ 
+  const char* txt = (const char *)temp_sprintf("%s%d", text, value);
+
   uint8_t modules[qrcode_getBufferSize(3)];
   
   QRCode qrcode;
-  qrcode_initText(&qrcode, modules, 3, ECC_MEDIUM, "SJK, MF");
+  qrcode_initText(&qrcode, modules, 3, ECC_MEDIUM, txt);
   
   int scale = 8;
   int border = 2;
@@ -169,30 +186,60 @@ void test() {
       }
     }
   }
-  //Texture2D tex = LoadTextureFromImage(img);
-  //UnloadImage(img);
-    
+ 
+  ImageResize(&img, BARCODE_SIZE, BARCODE_SIZE);
+  
+  Texture2D tex = LoadTextureFromImage(img);
+  
+  UnloadImage(img);
+ 
+  Barcode *b = alloc_barcode(); 
+  b->pos = (Vector2) { get_random_non_zero_int(BARCODE_SIZE, GetScreenWidth() - BARCODE_SIZE), 
+                       get_random_non_zero_int(BARCODE_SIZE, GetScreenHeight() - BARCODE_SIZE) };
+  b->velo = (Vector2) { get_random_non_zero_int(-SPEED_MAX, SPEED_MAX), 
+                        get_random_non_zero_int(-SPEED_MAX, SPEED_MAX) };
+  b->tex  = tex;
+  b->name = alloc_string_view(txt);
+  b->value = value;
+  b->living = true;
+
+  return b;
+
+  /*  
   const char *outFile = "qrcode_raylib.png";
   if (!ExportImage(img, outFile)) {
       fprintf(stderr, "Failed to save %s\n", outFile);
   } else {
       printf("Saved %s\n", outFile);
   }
+  */
+}
+
+void kill_barcode(Scan *scan, Barcodes *bars) {
+  da_foreach(Barcode, b, bars) {
+    nob_log(INFO, "\nb->name: "SV_Fmt"\nscan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
+    if (sv_eq(*b->name, *scan->sv)) {
+      b->living = false;
+    }
+  }
 }
 
 int main() {
 
   InitWindow(1920, 1080, "Scanner Wars");
-  test();
   SetTargetFPS(60);
 
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   SetRandomSeed(ts.tv_nsec);
 
+  int count = 1;
+
   Barcodes bars = {0};
-  load_barcodes(QR_DIR, &bars);
-  load_barcodes(DM_DIR, &bars);
+  Barcode *first = generate_qr_barcode("ONE", count);
+  da_append(&bars, *first);
+  //load_barcodes(QR_DIR, &bars);
+  //load_barcodes(DM_DIR, &bars);
 
   String_Builder buff = {0};
 
@@ -204,6 +251,11 @@ int main() {
         Scan *scan = process_scan(buff);
         if (scan) {
           nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
+          kill_barcode(scan, &bars);
+          Barcode *b = generate_qr_barcode("ONE", ++count);
+          da_append(&bars, *b);
+          b = generate_qr_barcode("ONE", ++count);
+          da_append(&bars, *b);
         }
         buff.count = 0;
       } else {
@@ -213,14 +265,14 @@ int main() {
     }
 
     da_foreach(Barcode, b, &bars) {
-      update_barcode(b);
+      if (b->living) update_barcode(b);
     }
 
     BeginDrawing();
     ClearBackground(GetColor(0x181818FF));
 
     da_foreach(Barcode, b, &bars) {
-      draw_barcode(*b);
+      if (b->living) draw_barcode(*b);
     }
 
     EndDrawing();
