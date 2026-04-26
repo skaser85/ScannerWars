@@ -1,10 +1,14 @@
 #include <stdio.h>
 #include <time.h>
+
+#include "qrcode.h"
+
 #include "raylib.h"
 #include "raymath.h"
 
+
 #define NOB_IMPLEMENTATION
-#include "./nob.h"
+#include "nob.h"
 
 #define ASSETS_DIR "../assets"
 #define QR_DIR ASSETS_DIR"/images/number-qrcodes"
@@ -134,9 +138,52 @@ Scan *process_scan(String_Builder sb) {
 
 }
 
+void test() {
+  
+  uint8_t modules[qrcode_getBufferSize(3)];
+  
+  QRCode qrcode;
+  qrcode_initText(&qrcode, modules, 3, ECC_MEDIUM, "SJK, MF");
+  
+  int scale = 8;
+  int border = 2;
+  int side = qrcode.size + border*2;
+  int imgW = side * scale;
+  
+  Image img = GenImageColor(imgW, imgW, WHITE);
+  
+  Color *pixels = (Color *)img.data;
+  
+  for (int y = 0; y < qrcode.size; y++) {
+    for (int x = 0; x < qrcode.size; x++) {
+      bool m = qrcode_getModule(&qrcode, x, y);
+      Color c = m ? (Color){0,0,0,255} : (Color){255,255,255,255};
+      int startY = (y + border) * scale;
+      int startX = (x + border) * scale;
+      for (int py = 0; py < scale; py++) {
+        for (int px = 0; px < scale; px++) {
+          int ix = startX + px;
+          int iy = startY + py;
+          pixels[iy * imgW + ix] = c;
+        }
+      }
+    }
+  }
+  //Texture2D tex = LoadTextureFromImage(img);
+  //UnloadImage(img);
+    
+  const char *outFile = "qrcode_raylib.png";
+  if (!ExportImage(img, outFile)) {
+      fprintf(stderr, "Failed to save %s\n", outFile);
+  } else {
+      printf("Saved %s\n", outFile);
+  }
+}
+
 int main() {
 
   InitWindow(1920, 1080, "Scanner Wars");
+  test();
   SetTargetFPS(60);
 
   struct timespec ts;
