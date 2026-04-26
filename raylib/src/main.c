@@ -215,13 +215,15 @@ Barcode *generate_qr_barcode(const char* text, int value) {
   */
 }
 
-void kill_barcode(Scan *scan, Barcodes *bars) {
+int kill_barcode(Scan *scan, Barcodes *bars) {
   da_foreach(Barcode, b, bars) {
     nob_log(INFO, "\nb->name: "SV_Fmt"\nscan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
     if (sv_eq(*b->name, *scan->sv)) {
       b->living = false;
+      return b->value;
     }
   }
+  return 0;
 }
 
 int main() {
@@ -234,6 +236,8 @@ int main() {
   SetRandomSeed(ts.tv_nsec);
 
   int count = 1;
+
+  int score = 0;
 
   Barcodes bars = {0};
   Barcode *first = generate_qr_barcode("ONE", count);
@@ -251,7 +255,7 @@ int main() {
         Scan *scan = process_scan(buff);
         if (scan) {
           nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
-          kill_barcode(scan, &bars);
+          score += kill_barcode(scan, &bars);
           Barcode *b = generate_qr_barcode("ONE", ++count);
           da_append(&bars, *b);
           b = generate_qr_barcode("ONE", ++count);
@@ -274,6 +278,8 @@ int main() {
     da_foreach(Barcode, b, &bars) {
       if (b->living) draw_barcode(*b);
     }
+
+    DrawText(temp_sprintf("Score: %d", score), 50, 100, 28, RAYWHITE);
 
     EndDrawing();
 
