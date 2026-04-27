@@ -18,6 +18,9 @@
 #define SPEED_MAX 5 
 #define BARCODE_SIZE 75
 
+
+Color COLORS[10];
+
 typedef struct {
   Vector2 pos;
   Vector2 velo;
@@ -37,6 +40,27 @@ typedef struct {
   char prefix;
   String_View *sv;
 } Scan;
+
+typedef struct {
+  Vector2 pos;
+  float radius;
+  Color color;
+  Vector2 velo;
+  bool living;
+} Particle;
+
+typedef struct {
+  Particle *items;
+  size_t count;
+  size_t capacity;
+  bool living;
+} Particles;
+
+typedef struct {
+  Particles *items;
+  size_t count; 
+  size_t capacity;
+} ParticlesCollection;
 
 Rectangle get_barcode_rect(Barcode b) {
   return (Rectangle) { .x = b.pos.x, .y = b.pos.y, .width = b.tex.width, .height = b.tex.height };
@@ -68,29 +92,6 @@ int get_random_non_zero_int(int _min, int _max) {
   return v;
 }
 
-void load_barcodes(const char* fp, Barcodes *bars) {
-  UNUSED(fp);
-  UNUSED(bars);
-  /*
-  FilePathList files = LoadDirectoryFiles(fp);
-  for (unsigned int i = 0; i < files.count; ++i) {
-    const char *f = files.paths[i];
-    Image img = LoadImage(f);
-    ImageResize(&img, BARCODE_SIZE, BARCODE_SIZE);
-    Texture2D tex = LoadTextureFromImage(img);
-    UnloadImage(img);
-    Barcode b = (Barcode) { 
-      (Vector2) { get_random_non_zero_int(100, GetScreenWidth() - 500), 
-        get_random_non_zero_int(100, GetScreenHeight() - 500) },
-        (Vector2) { get_random_non_zero_int(-SPEED_MAX, SPEED_MAX), 
-          get_random_non_zero_int(-SPEED_MAX, SPEED_MAX) },
-        tex 
-    };
-    da_append(bars, b);
-  }
-  */
-}
-
 String_View *alloc_string_view(const char* text) {
   String_View *sv = (String_View*)malloc(sizeof(String_View));
   memset(sv, 0, sizeof(*sv));
@@ -100,6 +101,20 @@ String_View *alloc_string_view(const char* text) {
     sv->data = text;
   }
   return sv;
+}
+
+Particle *alloc_particle() {
+  Particle *p = (Particle*)malloc(sizeof(Particle));
+  memset(p, 0, sizeof(*p));
+  p->living = true;
+  return p;
+}
+
+Particles *alloc_particles() {
+  Particles *p = (Particles*)malloc(sizeof(Particles));
+  memset(p, 0, sizeof(*p));
+  p->living = true;
+  return p;
 }
 
 Scan *alloc_scan(const char* text) {
@@ -154,23 +169,23 @@ Scan *process_scan(String_Builder sb) {
 }
 
 Barcode *generate_qr_barcode(const char* text, int value) {
- 
+
   const char* txt = (const char *)temp_sprintf("%s%d", text, value);
 
   uint8_t modules[qrcode_getBufferSize(3)];
-  
+
   QRCode qrcode;
   qrcode_initText(&qrcode, modules, 3, ECC_MEDIUM, txt);
-  
+
   int scale = 8;
   int border = 2;
   int side = qrcode.size + border*2;
   int imgW = side * scale;
-  
+
   Image img = GenImageColor(imgW, imgW, WHITE);
-  
+
   Color *pixels = (Color *)img.data;
-  
+
   for (int y = 0; y < qrcode.size; y++) {
     for (int x = 0; x < qrcode.size; x++) {
       bool m = qrcode_getModule(&qrcode, x, y);
@@ -186,44 +201,69 @@ Barcode *generate_qr_barcode(const char* text, int value) {
       }
     }
   }
- 
+
   ImageResize(&img, BARCODE_SIZE, BARCODE_SIZE);
-  
+
   Texture2D tex = LoadTextureFromImage(img);
-  
+
   UnloadImage(img);
- 
+
   Barcode *b = alloc_barcode(); 
   b->pos = (Vector2) { get_random_non_zero_int(BARCODE_SIZE, GetScreenWidth() - BARCODE_SIZE), 
-                       get_random_non_zero_int(BARCODE_SIZE, GetScreenHeight() - BARCODE_SIZE) };
+    get_random_non_zero_int(BARCODE_SIZE, GetScreenHeight() - BARCODE_SIZE) };
   b->velo = (Vector2) { get_random_non_zero_int(-SPEED_MAX, SPEED_MAX), 
-                        get_random_non_zero_int(-SPEED_MAX, SPEED_MAX) };
+    get_random_non_zero_int(-SPEED_MAX, SPEED_MAX) };
   b->tex  = tex;
   b->name = alloc_string_view(txt);
   b->value = value;
   b->living = true;
 
-  return b;
 
-  /*  
-  const char *outFile = "qrcode_raylib.png";
-  if (!ExportImage(img, outFile)) {
-      fprintf(stderr, "Failed to save %s\n", outFile);
-  } else {
-      printf("Saved %s\n", outFile);
-  }
-  */
+
+  return b;
 }
 
-int kill_barcode(Scan *scan, Barcodes *bars) {
+Barcode *kill_barcode(Scan *scan, Barcodes *bars) {
   da_foreach(Barcode, b, bars) {
     nob_log(INFO, "\nb->name: "SV_Fmt"\nscan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
     if (sv_eq(*b->name, *scan->sv)) {
       b->living = false;
-      return b->value;
+      return b;
     }
   }
-  return 0;
+  return NULL;
+}
+
+Particles *generate_particles(Vector2 start_pos) {
+
+  Particles *particles = alloc_particles();
+  size_t particle_amount = (size_t)get_random_non_zero_int(10, 30); 
+
+  for (size_t i = 0; i < particle_amount; ++i) {
+    Particle *p = alloc_particle();
+    p->pos = (Vector2) { .x = start_pos.x, .y = start_pos.y };
+    p->radius = (float)get_random_non_zero_int(5, 15);
+    p->color = COLORS[GetRandomValue(0, ARRAY_LEN(COLORS))];
+    p->velo = (Vector2) { .x = get_random_non_zero_int(-20, 20),
+      .y = get_random_non_zero_int(-20, 20) };
+    p->living = true;
+    da_append(particles, *p);
+  }
+
+  return particles;
+}
+
+void load_colors() {
+  COLORS[0] = RED;
+  COLORS[1] = BLUE;
+  COLORS[2] = GREEN;
+  COLORS[3] = PINK;
+  COLORS[4] = LIME;
+  COLORS[5] = YELLOW;
+  COLORS[6] = VIOLET;
+  COLORS[7] = GOLD;
+  COLORS[8] = SKYBLUE;
+  COLORS[9] = WHITE;
 }
 
 int main() {
@@ -235,6 +275,8 @@ int main() {
   clock_gettime(CLOCK_MONOTONIC, &ts);
   SetRandomSeed(ts.tv_nsec);
 
+  load_colors();
+
   int count = 1;
 
   int score = 0;
@@ -242,10 +284,10 @@ int main() {
   Barcodes bars = {0};
   Barcode *first = generate_qr_barcode("ONE", count);
   da_append(&bars, *first);
-  //load_barcodes(QR_DIR, &bars);
-  //load_barcodes(DM_DIR, &bars);
 
   String_Builder buff = {0};
+
+  ParticlesCollection particles = {0};
 
   while (!WindowShouldClose()) {
 
@@ -255,8 +297,12 @@ int main() {
         Scan *scan = process_scan(buff);
         if (scan) {
           nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
-          score += kill_barcode(scan, &bars);
-          Barcode *b = generate_qr_barcode("ONE", ++count);
+          Barcode *b = kill_barcode(scan, &bars);
+          if (b) {
+            score += b->value;
+            da_append(&particles, *generate_particles(b->pos));
+          }
+          b = generate_qr_barcode("ONE", ++count);
           da_append(&bars, *b);
           b = generate_qr_barcode("ONE", ++count);
           da_append(&bars, *b);
@@ -277,6 +323,28 @@ int main() {
 
     da_foreach(Barcode, b, &bars) {
       if (b->living) draw_barcode(*b);
+    }
+
+    da_foreach(Particles, p, &particles) {
+      if (p->living) {
+        size_t dead_count = 0;
+        da_foreach(Particle, it, p) {
+          if (it->living) {
+            if (
+                (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
+                (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
+               ) {
+              it->living = false;
+              dead_count++;
+            } else {
+              it->pos = Vector2Add(it->pos, it->velo);
+              DrawCircleV(it->pos, it->radius, it->color);
+            }
+          }
+        }
+        if (dead_count >= p->count)
+          p->living = false;
+      }
     }
 
     DrawText(temp_sprintf("Score: %d", score), 50, 100, 28, RAYWHITE);
