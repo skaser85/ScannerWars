@@ -18,7 +18,6 @@
 #define SPEED_MAX 5 
 #define BARCODE_SIZE 75
 
-
 Color COLORS[10];
 
 typedef struct {
@@ -61,6 +60,32 @@ typedef struct {
   size_t count; 
   size_t capacity;
 } ParticlesCollection;
+
+typedef struct {
+  size_t pad_x;
+  size_t pad_y;
+  Color color;
+  Color hovered_color;
+  size_t outline_thiccness;
+  size_t font_size;
+} ButtonConfig;
+
+typedef struct {
+  Vector2 pos;
+  Vector2 dims;
+  const char *text;
+  ButtonConfig config;
+} Button;
+
+typedef enum {
+  GS_MENU,
+  GS_PLAYING,
+  GS_COUNT
+} GameState;
+
+typedef struct {
+  GameState game_state;
+} Game;
 
 Rectangle get_barcode_rect(Barcode b) {
   return (Rectangle) { .x = b.pos.x, .y = b.pos.y, .width = b.tex.width, .height = b.tex.height };
@@ -225,7 +250,7 @@ Barcode *generate_qr_barcode(const char* text, int value) {
 
 Barcode *kill_barcode(Scan *scan, Barcodes *bars) {
   da_foreach(Barcode, b, bars) {
-    nob_log(INFO, "\nb->name: "SV_Fmt"\nscan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
+    nob_log(INFO, "b->name: "SV_Fmt"scan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
     if (sv_eq(*b->name, *scan->sv)) {
       b->living = false;
       return b;
@@ -266,6 +291,25 @@ void load_colors() {
   COLORS[9] = WHITE;
 }
 
+bool DrawButton(Button b) {
+  int tw = MeasureText(b.text, b.config.font_size);
+  int w = tw + b.config.pad_x*2;
+  int h = b.config.font_size + b.config.pad_y*2;
+  int tx = b.pos.x + b.config.pad_x;
+  int ty = b.pos.y + b.config.pad_y;
+
+  Rectangle bounds = (Rectangle) { .x = b.pos.x, .y = b.pos.y, .width = w, .height = h };
+  bool hovered = CheckCollisionPointRec(GetMousePosition(), bounds);
+  Color color = hovered ? b.config.hovered_color : b.config.color;
+
+  DrawText(b.text, tx, ty, b.config.font_size, color);
+  if (b.config.outline_thiccness > 0) {
+    DrawRectangleLinesEx(bounds, b.config.outline_thiccness, color);
+  }
+
+  return hovered;
+}
+
 int main() {
 
   InitWindow(1920, 1080, "Scanner Wars");
@@ -277,79 +321,107 @@ int main() {
 
   load_colors();
 
-  int count = 1;
-
   int score = 0;
 
   Barcodes bars = {0};
-  Barcode *first = generate_qr_barcode("ONE", count);
+  Barcode *first = generate_qr_barcode("ONE", 1);
   da_append(&bars, *first);
 
   String_Builder buff = {0};
 
   ParticlesCollection particles = {0};
 
+  ButtonConfig button_config = {0};
+  button_config.pad_x = 20;
+  button_config.pad_y = 10;
+  button_config.color = WHITE;
+  button_config.hovered_color = SKYBLUE;
+  button_config.outline_thiccness = 1;
+  button_config.font_size = 28;
+
+  Game game = {0};
+  game.game_state = GS_MENU;
+
   while (!WindowShouldClose()) {
-
-    int k = GetKeyPressed();
-    while (k > 0) {
-      if (k == KEY_ENTER) {
-        Scan *scan = process_scan(buff);
-        if (scan) {
-          nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
-          Barcode *b = kill_barcode(scan, &bars);
-          if (b) {
-            score += b->value;
-            da_append(&particles, *generate_particles(b->pos));
+   
+    if (game.game_state == GS_PLAYING) {
+      int k = GetKeyPressed();
+      while (k > 0) {
+        if (k == KEY_ENTER) {
+          //nob_log(INFO, "raw scan: "SV_Fmt, SV_Arg(sb_to_sv(buff)));
+          Scan *scan = process_scan(buff);
+          if (scan) {
+            //nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
+            Barcode *b = kill_barcode(scan, &bars);
+            if (b) {
+              score += b->value;
+              da_append(&particles, *generate_particles(b->pos));
+            }
+            b = generate_qr_barcode("ONE", 1);
+            da_append(&bars, *b);
+            b = generate_qr_barcode("ONE", 1);
+            da_append(&bars, *b);
           }
-          b = generate_qr_barcode("ONE", ++count);
-          da_append(&bars, *b);
-          b = generate_qr_barcode("ONE", ++count);
-          da_append(&bars, *b);
+          buff.count = 0;
+        } else {
+          sb_append(&buff, (char)k);
         }
-        buff.count = 0;
-      } else {
-        sb_append(&buff, (char)k);
+        k = GetKeyPressed();
       }
-      k = GetKeyPressed();
-    }
 
-    da_foreach(Barcode, b, &bars) {
-      if (b->living) update_barcode(b);
-    }
+      da_foreach(Barcode, b, &bars) {
+        if (b->living) update_barcode(b);
+      }
 
-    BeginDrawing();
-    ClearBackground(GetColor(0x181818FF));
+      BeginDrawing();
+      ClearBackground(GetColor(0x181818FF));
 
-    da_foreach(Barcode, b, &bars) {
-      if (b->living) draw_barcode(*b);
-    }
+      da_foreach(Barcode, b, &bars) {
+        if (b->living) draw_barcode(*b);
+      }
 
-    da_foreach(Particles, p, &particles) {
-      if (p->living) {
-        size_t dead_count = 0;
-        da_foreach(Particle, it, p) {
-          if (it->living) {
-            if (
-                (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
-                (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
-               ) {
-              it->living = false;
-              dead_count++;
-            } else {
-              it->pos = Vector2Add(it->pos, it->velo);
-              DrawCircleV(it->pos, it->radius, it->color);
+      da_foreach(Particles, p, &particles) {
+        if (p->living) {
+          size_t dead_count = 0;
+          da_foreach(Particle, it, p) {
+            if (it->living) {
+              if (
+                  (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
+                  (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
+                 ) {
+                it->living = false;
+                dead_count++;
+              } else {
+                it->pos = Vector2Add(it->pos, it->velo);
+                DrawCircleV(it->pos, it->radius, it->color);
+              }
             }
           }
+          if (dead_count >= p->count)
+            p->living = false;
         }
-        if (dead_count >= p->count)
-          p->living = false;
       }
+
+      DrawText(temp_sprintf("Score: %d", score), 50, 100, 28, RAYWHITE);
+      
+      EndDrawing();
+    } else if (game.game_state == GS_MENU) {
+      BeginDrawing();
+      ClearBackground(GetColor(0x360036FF));
+    
+      bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+      Button start = {0};
+      start.config = button_config;
+      start.text = "Start New Game";
+      start.pos = (Vector2) { .x = GetScreenWidth()/2, .y = GetScreenHeight()/2 };
+      if (DrawButton(start)) {
+        if (left_clicked) {
+          nob_log(INFO, "clicky clicky");
+        }
+      }
+
+      EndDrawing();
     }
-
-    DrawText(temp_sprintf("Score: %d", score), 50, 100, 28, RAYWHITE);
-
-    EndDrawing();
 
   }
 
