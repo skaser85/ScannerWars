@@ -85,6 +85,8 @@ typedef enum {
 
 typedef struct {
   GameState game_state;
+  Barcodes *barcodes;
+  ParticlesCollection *particles;
 } Game;
 
 Rectangle get_barcode_rect(Barcode b) {
@@ -140,6 +142,18 @@ Particles *alloc_particles() {
   memset(p, 0, sizeof(*p));
   p->living = true;
   return p;
+}
+
+ParticlesCollection *alloc_particles_collection() {
+  ParticlesCollection *p = (ParticlesCollection*)malloc(sizeof(ParticlesCollection));
+  memset(p, 0, sizeof(*p));
+  return p;
+}
+
+Barcodes *alloc_barcodes() {
+  Barcodes *b = (Barcodes*)malloc(sizeof(Barcodes));
+  memset(b, 0, sizeof(*b));
+  return b;
 }
 
 Scan *alloc_scan(const char* text) {
@@ -310,6 +324,25 @@ bool DrawButton(Button b) {
   return hovered;
 }
 
+size_t get_button_width(Button b) {
+  int tw = MeasureText(b.text, b.config.font_size);
+  int w = tw + b.config.pad_x*2;
+  return (size_t)w;
+}
+
+size_t get_button_height(Button b) {
+  return (size_t)b.config.font_size + b.config.pad_y*2;
+}
+
+void init_game(Game *game) {
+  game->barcodes = alloc_barcodes();
+  game->particles = alloc_particles_collection();
+  game->game_state = GS_MENU;
+
+  Barcode *b = generate_qr_barcode("idk", 1);
+  da_append(game->barcodes, *b);
+}
+
 int main() {
 
   InitWindow(1920, 1080, "Scanner Wars");
@@ -318,114 +351,140 @@ int main() {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   SetRandomSeed(ts.tv_nsec);
+  SetExitKey(KEY_NULL);
 
   load_colors();
 
   int score = 0;
 
-  Barcodes bars = {0};
-  Barcode *first = generate_qr_barcode("ONE", 1);
-  da_append(&bars, *first);
-
   String_Builder buff = {0};
 
-  ParticlesCollection particles = {0};
-
-  ButtonConfig button_config = {0};
-  button_config.pad_x = 20;
-  button_config.pad_y = 10;
-  button_config.color = WHITE;
-  button_config.hovered_color = SKYBLUE;
-  button_config.outline_thiccness = 1;
-  button_config.font_size = 28;
+  ButtonConfig default_button_config = {0};
+  default_button_config.pad_x = 20;
+  default_button_config.pad_y = 10;
+  default_button_config.color = WHITE;
+  default_button_config.hovered_color = SKYBLUE;
+  default_button_config.outline_thiccness = 1;
+  default_button_config.font_size = 28;
 
   Game game = {0};
-  game.game_state = GS_MENU;
+  init_game(&game);
 
   while (!WindowShouldClose()) {
    
     if (game.game_state == GS_PLAYING) {
-      int k = GetKeyPressed();
-      while (k > 0) {
-        if (k == KEY_ENTER) {
-          //nob_log(INFO, "raw scan: "SV_Fmt, SV_Arg(sb_to_sv(buff)));
-          Scan *scan = process_scan(buff);
-          if (scan) {
-            //nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
-            Barcode *b = kill_barcode(scan, &bars);
-            if (b) {
-              score += b->value;
-              da_append(&particles, *generate_particles(b->pos));
+      if (IsKeyPressed(KEY_ESCAPE)) {
+        game.game_state = GS_MENU;
+      } else {
+
+        int k = GetKeyPressed();
+        while (k > 0) {
+          if (k == KEY_ENTER) {
+            //nob_log(INFO, "raw scan: "SV_Fmt, SV_Arg(sb_to_sv(buff)));
+            Scan *scan = process_scan(buff);
+            if (scan) {
+              //nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
+              Barcode *b = kill_barcode(scan, game.barcodes);
+              if (b) {
+                score += b->value;
+                da_append(game.particles, *generate_particles(b->pos));
+              }
+              b = generate_qr_barcode("ONE", 1);
+              da_append(game.barcodes, *b);
+              b = generate_qr_barcode("ONE", 1);
+              da_append(game.barcodes, *b);
             }
-            b = generate_qr_barcode("ONE", 1);
-            da_append(&bars, *b);
-            b = generate_qr_barcode("ONE", 1);
-            da_append(&bars, *b);
+            buff.count = 0;
+          } else {
+            sb_append(&buff, (char)k);
           }
-          buff.count = 0;
-        } else {
-          sb_append(&buff, (char)k);
+          k = GetKeyPressed();
         }
-        k = GetKeyPressed();
-      }
 
-      da_foreach(Barcode, b, &bars) {
-        if (b->living) update_barcode(b);
-      }
+        da_foreach(Barcode, b, game.barcodes) {
+          if (b->living) update_barcode(b);
+        }
 
-      BeginDrawing();
-      ClearBackground(GetColor(0x181818FF));
+        BeginDrawing();
+        ClearBackground(GetColor(0x181818FF));
 
-      da_foreach(Barcode, b, &bars) {
-        if (b->living) draw_barcode(*b);
-      }
+        da_foreach(Barcode, b, game.barcodes) {
+          if (b->living) draw_barcode(*b);
+        }
 
-      da_foreach(Particles, p, &particles) {
-        if (p->living) {
-          size_t dead_count = 0;
-          da_foreach(Particle, it, p) {
-            if (it->living) {
-              if (
-                  (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
-                  (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
-                 ) {
-                it->living = false;
-                dead_count++;
-              } else {
-                it->pos = Vector2Add(it->pos, it->velo);
-                DrawCircleV(it->pos, it->radius, it->color);
+        da_foreach(Particles, p, game.particles) {
+          if (p->living) {
+            size_t dead_count = 0;
+            da_foreach(Particle, it, p) {
+              if (it->living) {
+                if (
+                    (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
+                    (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
+                   ) {
+                  it->living = false;
+                  dead_count++;
+                } else {
+                  it->pos = Vector2Add(it->pos, it->velo);
+                  DrawCircleV(it->pos, it->radius, it->color);
+                }
               }
             }
+            if (dead_count >= p->count)
+              p->living = false;
           }
-          if (dead_count >= p->count)
-            p->living = false;
         }
-      }
 
-      DrawText(temp_sprintf("Score: %d", score), 50, 100, 28, RAYWHITE);
-      
-      EndDrawing();
+        DrawText(temp_sprintf("Score: %d", score), 50, 100, 28, RAYWHITE);
+        
+        EndDrawing();
+
+      }
     } else if (game.game_state == GS_MENU) {
+      
       BeginDrawing();
       ClearBackground(GetColor(0x360036FF));
     
       bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+      
       Button start = {0};
-      start.config = button_config;
+      start.config = default_button_config;
       start.text = "Start New Game";
-      start.pos = (Vector2) { .x = GetScreenWidth()/2, .y = GetScreenHeight()/2 };
+      start.config.outline_thiccness = 0;
+      start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start)/2, .y = GetScreenHeight()/2-200 };
       if (DrawButton(start)) {
         if (left_clicked) {
-          nob_log(INFO, "clicky clicky");
+          init_game(&game);
+          game.game_state = GS_PLAYING;
         }
       }
 
+      Button resume = {0};
+      resume.config = default_button_config;
+      resume.text = "Resume";
+      resume.config.outline_thiccness = 0;
+      resume.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(resume)/2, .y = start.pos.y + get_button_height(start) + resume.config.pad_y*4 };
+      if (DrawButton(resume)) {
+        if (left_clicked) {
+          game.game_state = GS_PLAYING;
+        }
+      }
+      
+      Button exit_btn = {0};
+      exit_btn.config = default_button_config;
+      exit_btn.text = "Exit";
+      exit_btn.config.outline_thiccness = 0;
+      exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn)/2, .y = resume.pos.y + get_button_height(start) + exit_btn.config.pad_y*4 };
+      if (DrawButton(exit_btn)) {
+        if (left_clicked) {
+          break;
+        }
+      }
       EndDrawing();
     }
 
   }
 
-  da_foreach(Barcode, b, &bars) {
+  da_foreach(Barcode, b, game.barcodes) {
     UnloadTexture(b->tex);
   }
 
