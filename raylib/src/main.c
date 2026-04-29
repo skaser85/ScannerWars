@@ -11,9 +11,12 @@
 #include "nob.h"
 
 #define ASSETS_DIR "../assets"
+#define IMAGES_DIR ASSETS_DIR"/images"
 #define FONTS_DIR ASSETS_DIR"/fonts"
-#define QR_DIR ASSETS_DIR"/images/number-qrcodes"
-#define DM_DIR ASSETS_DIR"/images/alphabet-data-matrix"
+#define SOUNDS_DIR ASSETS_DIR"/sounds"
+
+#define QR_DIR IMAGES_DIR"/number-qrcodes"
+#define DM_DIR IMAGTES_DIR"/alphabet-data-matrix"
 
 #define BOX_OUTLINE_THICCNESS 1
 #define SPEED_MAX 5 
@@ -84,6 +87,12 @@ typedef struct {
   int score;
 } Player;
 
+typedef struct {
+  Sound *items;
+  size_t capacity;
+  size_t count;
+} Sounds;
+
 typedef enum {
   GS_MENU,
   GS_PLAYING,
@@ -100,6 +109,9 @@ typedef struct {
   Font item_font;
   Font player_font;
   const char* title;
+  Sound boom;
+  Sounds *sounds;
+  bool brain_rot;
 } Game;
 
 Rectangle get_barcode_rect(Barcode b) {
@@ -191,6 +203,13 @@ Player *alloc_player() {
 
   return p;
 }
+
+Sounds *alloc_sounds() {
+  Sounds *s = (Sounds*)malloc(sizeof(Sounds));
+  memset(s, 0, sizeof(*s));
+
+  return s;
+} 
 
 Scan *process_scan(String_Builder sb) {
   if (sb.count == 0) return NULL;
@@ -379,6 +398,14 @@ void init_game(Game *game) {
   b = generate_qr_barcode(1);
   b->tint = PINK; 
   da_append(game->barcodes, *b);
+
+  game->sounds = alloc_sounds();
+  FilePathList soundFiles = LoadDirectoryFiles(SOUNDS_DIR);
+  for (size_t i = 0; i < soundFiles.count; ++i){
+    if (strcmp("boom.mp3", GetFileName(soundFiles.paths[i])) != 0) {
+      da_append(game->sounds, LoadSound(soundFiles.paths[i]));
+    }
+  }
 }
 
 Font init_font(const char* fp, int font_size, int *codepoints, int codepoint_count) {
@@ -387,10 +414,15 @@ Font init_font(const char* fp, int font_size, int *codepoints, int codepoint_cou
   return GetFontDefault();
 }
 
+Sound get_random_sound(Sounds *sounds) {
+  return sounds->items[GetRandomValue(0, sounds->count-1)];
+}
+
 int main() {
 
   InitWindow(1920, 1080, "Scanner Wars");
   SetTargetFPS(60);
+  InitAudioDevice();
 
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -415,6 +447,8 @@ int main() {
   game.player_font = init_font(FONTS_DIR"/asteroid_blaster/Asteroid Blaster.ttf", 200, NULL, 0);
   game.item_font = init_font(FONTS_DIR"/asteroid_blaster/Asteroid Blaster.ttf", 64, NULL, 0);
   game.title = "SCANNER WARS";
+  game.boom = LoadSound(SOUNDS_DIR"/boom.mp3");
+  game.brain_rot = false;
 
   while (!WindowShouldClose()) {
    
@@ -434,6 +468,12 @@ int main() {
               if (b) {
                 //nob_log(INFO, "x: %f, y: %f", b->pos.x, b->pos.y);
                 da_append(game.particles, *generate_particles(b->pos));
+                if (game.brain_rot) {
+                  Sound s = get_random_sound(game.sounds);
+                  PlaySound(s);
+                } else {
+                  PlaySound(game.boom);
+                }
                 if (scan->prefix == game.p1->prefix) {
                   game.p1->score += b->value;
                   b = generate_qr_barcode(1);
@@ -506,7 +546,8 @@ int main() {
       ClearBackground(GetColor(0x360036FF));
       
       Vector2 td = MeasureTextEx(game.title_font, game.title, game.title_font.baseSize, 1);
-      DrawTextEx(game.title_font, game.title, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=100}, 200, 1, RED); 
+      Color color = (int)GetTime() % 2 == 0 ? RED : WHITE;
+      DrawTextEx(game.title_font, game.title, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=100}, 200, 1, color); 
 
       bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
       
@@ -514,7 +555,7 @@ int main() {
       start.config = default_button_config;
       start.text = "Start New Game";
       start.config.outline_thiccness = 0;
-      start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start, game.item_font)/2, .y = GetScreenHeight()/2-200 };
+      start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start, game.item_font)/2, .y = 400};
       if (DrawButton(start, game.item_font)) {
         if (left_clicked) {
           init_game(&game);
@@ -533,16 +574,33 @@ int main() {
         }
       }
       
+      Button brain_rot_btn = {0};
+      brain_rot_btn.config = default_button_config;
+      if (game.brain_rot) {
+        brain_rot_btn.text = "Deactivate Brain Rot";
+      } else {
+        brain_rot_btn.text = "Activate Brain Rot";
+      }
+      brain_rot_btn.config.outline_thiccness = 0;
+      brain_rot_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(brain_rot_btn, game.item_font)/2, .y = resume.pos.y + get_button_height(start, game.item_font) + brain_rot_btn.config.pad_y*4 };
+      if (DrawButton(brain_rot_btn, game.item_font)) {
+        if (left_clicked) {
+          game.brain_rot = !game.brain_rot;
+        }
+      }
+
       Button exit_btn = {0};
       exit_btn.config = default_button_config;
       exit_btn.text = "Exit";
       exit_btn.config.outline_thiccness = 0;
-      exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game.item_font)/2, .y = resume.pos.y + get_button_height(start, game.item_font) + exit_btn.config.pad_y*4 };
+      exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game.item_font)/2, .y = brain_rot_btn.pos.y + get_button_height(brain_rot_btn, game.item_font) + exit_btn.config.pad_y*4 };
       if (DrawButton(exit_btn, game.item_font)) {
         if (left_clicked) {
           break;
         }
       }
+      
+      
       EndDrawing();
     }
 
@@ -555,6 +613,8 @@ int main() {
   UnloadFont(game.title_font);
   UnloadFont(game.item_font);
   UnloadFont(game.player_font);
+
+  UnloadSound(game.boom);
 
   CloseWindow();
 
