@@ -227,9 +227,14 @@ Scan *process_scan(String_Builder sb) {
 
 }
 
-Barcode *generate_qr_barcode(const char* text, int value) {
+size_t get_id() {
+  static size_t id = 0;
+  return ++id;
+}
 
-  const char* txt = (const char *)temp_sprintf("%s%d", text, value);
+Barcode *generate_qr_barcode(int value) {
+
+  const char* txt = (const char *)temp_sprintf("%ld%d", get_id(), value);
 
   uint8_t modules[qrcode_getBufferSize(3)];
 
@@ -284,7 +289,7 @@ Barcode *generate_qr_barcode(const char* text, int value) {
 
 Barcode *kill_barcode(Scan *scan, Barcodes *bars) {
   da_foreach(Barcode, b, bars) {
-    nob_log(INFO, "b->name: "SV_Fmt"scan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
+    nob_log(INFO, "\nb->name: "SV_Fmt"\nscan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
     if (sv_eq(*b->name, *scan->sv)) {
       b->living = false;
       return b;
@@ -326,18 +331,19 @@ void load_colors() {
 }
 
 bool DrawButton(Button b, Font font) {
-  Vector2 td = MeasureTextEx(font, b.text, b.config.font_size, 1);
+  Vector2 td = MeasureTextEx(font, b.text, font.baseSize, 1);
   int tw = td.x;
   int w = tw + b.config.pad_x*2;
-  int h = b.config.font_size + b.config.pad_y*2;
+  int h = font.baseSize + b.config.pad_y*2;
   int tx = b.pos.x + b.config.pad_x;
-  int ty = b.pos.y + b.config.pad_y;
+  int ty = b.pos.y + b.config.pad_y + font.baseSize/6;
 
   Rectangle bounds = (Rectangle) { .x = b.pos.x, .y = b.pos.y, .width = w, .height = h };
   bool hovered = CheckCollisionPointRec(GetMousePosition(), bounds);
   Color color = hovered ? b.config.hovered_color : b.config.color;
 
   DrawTextEx(font, b.text, (Vector2){.x=tx,.y=ty}, (float)font.baseSize, 1, color);
+  //DrawRectangleLinesEx(bounds, 1, color);
   if (b.config.outline_thiccness > 0) {
     DrawRectangleLinesEx(bounds, b.config.outline_thiccness, color);
   }
@@ -351,8 +357,9 @@ size_t get_button_width(Button b, Font font) {
   return (size_t)w;
 }
 
-size_t get_button_height(Button b) {
-  return (size_t)b.config.font_size + b.config.pad_y*2;
+size_t get_button_height(Button b, Font font) {
+  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
+  return (size_t)td.y + b.config.pad_y*2;
 }
 
 void init_game(Game *game) {
@@ -365,11 +372,11 @@ void init_game(Game *game) {
   game->p1->prefix = '#';
   game->p2->prefix = '@';
 
-  Barcode *b = generate_qr_barcode("IDK", 1);
+  Barcode *b = generate_qr_barcode(1);
   b->tint = WHITE;
   da_append(game->barcodes, *b);
   
-  b = generate_qr_barcode("IDK", 1);
+  b = generate_qr_barcode(1);
   b->tint = PINK; 
   da_append(game->barcodes, *b);
 }
@@ -406,7 +413,7 @@ int main() {
   init_game(&game);
   game.title_font = init_font(FONTS_DIR"/hellbone/Hellbone-Demo.otf", 200, NULL, 0);
   game.player_font = init_font(FONTS_DIR"/asteroid_blaster/Asteroid Blaster.ttf", 200, NULL, 0);
-  game.item_font = init_font(FONTS_DIR"/flesh_wound/Flesh Wound.ttf", 64, NULL, 0); 
+  game.item_font = init_font(FONTS_DIR"/asteroid_blaster/Asteroid Blaster.ttf", 64, NULL, 0);
   game.title = "SCANNER WARS";
 
   while (!WindowShouldClose()) {
@@ -419,30 +426,31 @@ int main() {
         int k = GetKeyPressed();
         while (k > 0) {
           if (k == KEY_ENTER) {
-            //nob_log(INFO, "raw scan: "SV_Fmt, SV_Arg(sb_to_sv(buff)));
+            //nob_log(INFO, "raw scan: \n"SV_Fmt, SV_Arg(sb_to_sv(buff)));
             Scan *scan = process_scan(buff);
             if (scan) {
               //nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
               Barcode *b = kill_barcode(scan, game.barcodes);
               if (b) {
+                //nob_log(INFO, "x: %f, y: %f", b->pos.x, b->pos.y);
+                da_append(game.particles, *generate_particles(b->pos));
                 if (scan->prefix == game.p1->prefix) {
                   game.p1->score += b->value;
-                  b = generate_qr_barcode("IDK", 1);
+                  b = generate_qr_barcode(1);
                   b->tint = WHITE;
                   da_append(game.barcodes, *b);
-                  b = generate_qr_barcode("IDK", 1);
+                  b = generate_qr_barcode(1);
                   b->tint = WHITE;
                   da_append(game.barcodes, *b);
                 } else if (scan->prefix == game.p2->prefix) {
                   game.p2->score += b->value;
-                  b = generate_qr_barcode("IDK", 1);
+                  b = generate_qr_barcode(1);
                   b->tint = PINK;
                   da_append(game.barcodes, *b);
-                  b = generate_qr_barcode("IDK", 1);
+                  b = generate_qr_barcode(1);
                   b->tint = PINK;
                   da_append(game.barcodes, *b);
                 }
-                da_append(game.particles, *generate_particles(b->pos));
               }
               
             }
@@ -498,7 +506,7 @@ int main() {
       ClearBackground(GetColor(0x360036FF));
       
       Vector2 td = MeasureTextEx(game.title_font, game.title, game.title_font.baseSize, 1);
-      DrawTextEx(game.title_font, game.title, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=100}, 200, 1, WHITE);    
+      DrawTextEx(game.title_font, game.title, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=100}, 200, 1, RED); 
 
       bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
       
@@ -518,7 +526,7 @@ int main() {
       resume.config = default_button_config;
       resume.text = "Resume";
       resume.config.outline_thiccness = 0;
-      resume.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(resume, game.item_font)/2, .y = start.pos.y + get_button_height(start) + resume.config.pad_y*4 };
+      resume.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(resume, game.item_font)/2, .y = start.pos.y + get_button_height(start, game.item_font) + resume.config.pad_y*4 };
       if (DrawButton(resume, game.item_font)) {
         if (left_clicked) {
           game.game_state = GS_PLAYING;
@@ -529,7 +537,7 @@ int main() {
       exit_btn.config = default_button_config;
       exit_btn.text = "Exit";
       exit_btn.config.outline_thiccness = 0;
-      exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game.item_font)/2, .y = resume.pos.y + get_button_height(start) + exit_btn.config.pad_y*4 };
+      exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game.item_font)/2, .y = resume.pos.y + get_button_height(start, game.item_font) + exit_btn.config.pad_y*4 };
       if (DrawButton(exit_btn, game.item_font)) {
         if (left_clicked) {
           break;
