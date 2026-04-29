@@ -365,13 +365,19 @@ void init_game(Game *game) {
   game->p1->prefix = '#';
   game->p2->prefix = '@';
 
-  Barcode *b = generate_qr_barcode("idk", 1);
+  Barcode *b = generate_qr_barcode("IDK", 1);
   b->tint = WHITE;
   da_append(game->barcodes, *b);
   
-  b = generate_qr_barcode("idk", 1);
+  b = generate_qr_barcode("IDK", 1);
   b->tint = PINK; 
   da_append(game->barcodes, *b);
+}
+
+Font init_font(const char* fp, int font_size, int *codepoints, int codepoint_count) {
+  if (FileExists(fp)) 
+    return LoadFontEx(fp, font_size, codepoints, codepoint_count);
+  return GetFontDefault();
 }
 
 int main() {
@@ -398,9 +404,9 @@ int main() {
 
   Game game = {0};
   init_game(&game);
-  game.title_font = LoadFontEx(FONTS_DIR"/hellbone/Hellbone-Demo.otf", 200, 0, 250);
-  game.player_font = LoadFontEx(FONTS_DIR"/asteroid_blaster/Asteroid Blaster.ttf", 200, 0, 250);
-  game.item_font = LoadFontEx(FONTS_DIR"/flesh_wound/Flesh Wound.ttf", 64, 0, 250); 
+  game.title_font = init_font(FONTS_DIR"/hellbone/Hellbone-Demo.otf", 200, NULL, 0);
+  game.player_font = init_font(FONTS_DIR"/asteroid_blaster/Asteroid Blaster.ttf", 200, NULL, 0);
+  game.item_font = init_font(FONTS_DIR"/flesh_wound/Flesh Wound.ttf", 64, NULL, 0); 
   game.title = "SCANNER WARS";
 
   while (!WindowShouldClose()) {
@@ -421,18 +427,18 @@ int main() {
               if (b) {
                 if (scan->prefix == game.p1->prefix) {
                   game.p1->score += b->value;
-                  b = generate_qr_barcode("idk", 1);
+                  b = generate_qr_barcode("IDK", 1);
                   b->tint = WHITE;
                   da_append(game.barcodes, *b);
-                  b = generate_qr_barcode("idk", 1);
+                  b = generate_qr_barcode("IDK", 1);
                   b->tint = WHITE;
                   da_append(game.barcodes, *b);
                 } else if (scan->prefix == game.p2->prefix) {
                   game.p2->score += b->value;
-                  b = generate_qr_barcode("idk", 1);
+                  b = generate_qr_barcode("IDK", 1);
                   b->tint = PINK;
                   da_append(game.barcodes, *b);
-                  b = generate_qr_barcode("idk", 1);
+                  b = generate_qr_barcode("IDK", 1);
                   b->tint = PINK;
                   da_append(game.barcodes, *b);
                 }
