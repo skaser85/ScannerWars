@@ -11,6 +11,7 @@
 #include "nob.h"
 
 #define ASSETS_DIR "../assets"
+#define FONTS_DIR ASSETS_DIR"/fonts"
 #define QR_DIR ASSETS_DIR"/images/number-qrcodes"
 #define DM_DIR ASSETS_DIR"/images/alphabet-data-matrix"
 
@@ -95,6 +96,10 @@ typedef struct {
   ParticlesCollection *particles;
   Player *p1;
   Player *p2;
+  Font title_font;
+  Font item_font;
+  Font player_font;
+  const char* title;
 } Game;
 
 Rectangle get_barcode_rect(Barcode b) {
@@ -320,8 +325,9 @@ void load_colors() {
   COLORS[9] = WHITE;
 }
 
-bool DrawButton(Button b) {
-  int tw = MeasureText(b.text, b.config.font_size);
+bool DrawButton(Button b, Font font) {
+  Vector2 td = MeasureTextEx(font, b.text, b.config.font_size, 1);
+  int tw = td.x;
   int w = tw + b.config.pad_x*2;
   int h = b.config.font_size + b.config.pad_y*2;
   int tx = b.pos.x + b.config.pad_x;
@@ -331,7 +337,7 @@ bool DrawButton(Button b) {
   bool hovered = CheckCollisionPointRec(GetMousePosition(), bounds);
   Color color = hovered ? b.config.hovered_color : b.config.color;
 
-  DrawText(b.text, tx, ty, b.config.font_size, color);
+  DrawTextEx(font, b.text, (Vector2){.x=tx,.y=ty}, (float)font.baseSize, 1, color);
   if (b.config.outline_thiccness > 0) {
     DrawRectangleLinesEx(bounds, b.config.outline_thiccness, color);
   }
@@ -339,9 +345,9 @@ bool DrawButton(Button b) {
   return hovered;
 }
 
-size_t get_button_width(Button b) {
-  int tw = MeasureText(b.text, b.config.font_size);
-  int w = tw + b.config.pad_x*2;
+size_t get_button_width(Button b, Font font) {
+  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
+  int w = td.x + b.config.pad_x*2;
   return (size_t)w;
 }
 
@@ -392,6 +398,10 @@ int main() {
 
   Game game = {0};
   init_game(&game);
+  game.title_font = LoadFontEx(FONTS_DIR"/hellbone/Hellbone-Demo.otf", 200, 0, 250);
+  game.player_font = LoadFontEx(FONTS_DIR"/asteroid_blaster/Asteroid Blaster.ttf", 200, 0, 250);
+  game.item_font = LoadFontEx(FONTS_DIR"/flesh_wound/Flesh Wound.ttf", 64, 0, 250); 
+  game.title = "SCANNER WARS";
 
   while (!WindowShouldClose()) {
    
@@ -470,8 +480,8 @@ int main() {
           }
         }
 
-        DrawText(temp_sprintf("Player 1 Score: %d", game.p1->score), 50, 100, 28, RAYWHITE);
-        DrawText(temp_sprintf("Player 2 Score: %d", game.p2->score), 50, 150, 28, RAYWHITE);
+        DrawTextEx(game.player_font, temp_sprintf("Player 1 Score: %d", game.p1->score), (Vector2){.x=50,.y=100}, 28, 1, RAYWHITE);
+        DrawTextEx(game.player_font, temp_sprintf("Player 2 Score: %d", game.p2->score), (Vector2){.x=50,.y=150}, 28, 1, RAYWHITE);
         
         EndDrawing();
 
@@ -480,15 +490,18 @@ int main() {
       
       BeginDrawing();
       ClearBackground(GetColor(0x360036FF));
-    
+      
+      Vector2 td = MeasureTextEx(game.title_font, game.title, game.title_font.baseSize, 1);
+      DrawTextEx(game.title_font, game.title, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=100}, 200, 1, WHITE);    
+
       bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
       
       Button start = {0};
       start.config = default_button_config;
       start.text = "Start New Game";
       start.config.outline_thiccness = 0;
-      start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start)/2, .y = GetScreenHeight()/2-200 };
-      if (DrawButton(start)) {
+      start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start, game.item_font)/2, .y = GetScreenHeight()/2-200 };
+      if (DrawButton(start, game.item_font)) {
         if (left_clicked) {
           init_game(&game);
           game.game_state = GS_PLAYING;
@@ -499,8 +512,8 @@ int main() {
       resume.config = default_button_config;
       resume.text = "Resume";
       resume.config.outline_thiccness = 0;
-      resume.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(resume)/2, .y = start.pos.y + get_button_height(start) + resume.config.pad_y*4 };
-      if (DrawButton(resume)) {
+      resume.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(resume, game.item_font)/2, .y = start.pos.y + get_button_height(start) + resume.config.pad_y*4 };
+      if (DrawButton(resume, game.item_font)) {
         if (left_clicked) {
           game.game_state = GS_PLAYING;
         }
@@ -510,8 +523,8 @@ int main() {
       exit_btn.config = default_button_config;
       exit_btn.text = "Exit";
       exit_btn.config.outline_thiccness = 0;
-      exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn)/2, .y = resume.pos.y + get_button_height(start) + exit_btn.config.pad_y*4 };
-      if (DrawButton(exit_btn)) {
+      exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game.item_font)/2, .y = resume.pos.y + get_button_height(start) + exit_btn.config.pad_y*4 };
+      if (DrawButton(exit_btn, game.item_font)) {
         if (left_clicked) {
           break;
         }
@@ -524,6 +537,10 @@ int main() {
   da_foreach(Barcode, b, game.barcodes) {
     UnloadTexture(b->tex);
   }
+
+  UnloadFont(game.title_font);
+  UnloadFont(game.item_font);
+  UnloadFont(game.player_font);
 
   CloseWindow();
 
