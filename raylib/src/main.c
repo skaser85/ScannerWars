@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <time.h>
 
+// qrcode needs to go before raylib otherwise weird errors happen
 #include "qrcode.h"
 
 #include "raylib.h"
 #include "raymath.h"
-
 
 #define NOB_IMPLEMENTATION
 #include "nob.h"
@@ -27,6 +27,7 @@ typedef struct {
   int value;
   Texture2D tex;
   bool living;
+  Color tint;
 } Barcode;
 
 typedef struct {
@@ -77,6 +78,11 @@ typedef struct {
   ButtonConfig config;
 } Button;
 
+typedef struct {
+  char prefix;
+  int score;
+} Player;
+
 typedef enum {
   GS_MENU,
   GS_PLAYING,
@@ -87,6 +93,8 @@ typedef struct {
   GameState game_state;
   Barcodes *barcodes;
   ParticlesCollection *particles;
+  Player *p1;
+  Player *p2;
 } Game;
 
 Rectangle get_barcode_rect(Barcode b) {
@@ -94,7 +102,7 @@ Rectangle get_barcode_rect(Barcode b) {
 }
 
 void draw_barcode(Barcode b) {
-  DrawTextureEx(b.tex, b.pos, 0, 1, WHITE);
+  DrawTextureEx(b.tex, b.pos, 0, 1, b.tint);
   DrawRectangleLinesEx(get_barcode_rect(b), BOX_OUTLINE_THICCNESS, LIME);
 }
 
@@ -170,6 +178,13 @@ Barcode *alloc_barcode() {
   memset(b, 0, sizeof(*b));
 
   return b;
+}
+
+Player *alloc_player() {
+  Player *p = (Player*)malloc(sizeof(Player));
+  memset(p, 0, sizeof(*p));
+
+  return p;
 }
 
 Scan *process_scan(String_Builder sb) {
@@ -338,8 +353,18 @@ void init_game(Game *game) {
   game->barcodes = alloc_barcodes();
   game->particles = alloc_particles_collection();
   game->game_state = GS_MENU;
+  game->p1 = alloc_player();
+  game->p2 = alloc_player();
+
+  game->p1->prefix = '#';
+  game->p2->prefix = '@';
 
   Barcode *b = generate_qr_barcode("idk", 1);
+  b->tint = WHITE;
+  da_append(game->barcodes, *b);
+  
+  b = generate_qr_barcode("idk", 1);
+  b->tint = PINK; 
   da_append(game->barcodes, *b);
 }
 
@@ -354,8 +379,6 @@ int main() {
   SetExitKey(KEY_NULL);
 
   load_colors();
-
-  int score = 0;
 
   String_Builder buff = {0};
 
@@ -386,13 +409,26 @@ int main() {
               //nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
               Barcode *b = kill_barcode(scan, game.barcodes);
               if (b) {
-                score += b->value;
+                if (scan->prefix == game.p1->prefix) {
+                  game.p1->score += b->value;
+                  b = generate_qr_barcode("idk", 1);
+                  b->tint = WHITE;
+                  da_append(game.barcodes, *b);
+                  b = generate_qr_barcode("idk", 1);
+                  b->tint = WHITE;
+                  da_append(game.barcodes, *b);
+                } else if (scan->prefix == game.p2->prefix) {
+                  game.p2->score += b->value;
+                  b = generate_qr_barcode("idk", 1);
+                  b->tint = PINK;
+                  da_append(game.barcodes, *b);
+                  b = generate_qr_barcode("idk", 1);
+                  b->tint = PINK;
+                  da_append(game.barcodes, *b);
+                }
                 da_append(game.particles, *generate_particles(b->pos));
               }
-              b = generate_qr_barcode("ONE", 1);
-              da_append(game.barcodes, *b);
-              b = generate_qr_barcode("ONE", 1);
-              da_append(game.barcodes, *b);
+              
             }
             buff.count = 0;
           } else {
@@ -434,7 +470,8 @@ int main() {
           }
         }
 
-        DrawText(temp_sprintf("Score: %d", score), 50, 100, 28, RAYWHITE);
+        DrawText(temp_sprintf("Player 1 Score: %d", game.p1->score), 50, 100, 28, RAYWHITE);
+        DrawText(temp_sprintf("Player 2 Score: %d", game.p2->score), 50, 150, 28, RAYWHITE);
         
         EndDrawing();
 
