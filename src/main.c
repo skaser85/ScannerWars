@@ -14,7 +14,7 @@
 #define NOB_IMPLEMENTATION
 #include "nob.h"
 
-#define ASSETS_DIR "../assets"
+#define ASSETS_DIR "./assets"
 #define IMAGES_DIR ASSETS_DIR"/images"
 #define FONTS_DIR ASSETS_DIR"/fonts"
 #define SOUNDS_DIR ASSETS_DIR"/sounds"
