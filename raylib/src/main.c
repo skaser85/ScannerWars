@@ -1,14 +1,6 @@
-#include <stdio.h>
-#include <time.h>
-
-// qrcode needs to go before raylib otherwise weird errors happen
-#include "qrcode.h"
-
-#include "raylib.h"
-#include "raymath.h"
 
 #define NOB_IMPLEMENTATION
-#include "nob.h"
+#include "all.h"
 
 #define ASSETS_DIR "../assets"
 #define IMAGES_DIR ASSETS_DIR"/images"
@@ -18,40 +10,7 @@
 #define QR_DIR IMAGES_DIR"/number-qrcodes"
 #define DM_DIR IMAGTES_DIR"/alphabet-data-matrix"
 
-#define BOX_OUTLINE_THICCNESS 1
-#define SPEED_MAX 5 
-#define BARCODE_SIZE 75
-
 #define ROUND_TIME_SECS 10
-
-Color COLORS[10];
-
-typedef struct {
-  Vector2 pos;
-  Vector2 velo;
-  String_View *name;
-  int value;
-  Texture2D tex;
-  bool living;
-  Color tint;
-} Barcode;
-
-typedef struct {
-  Barcode *items;
-  size_t capacity;
-  size_t count;
-} Barcodes;
-
-typedef struct {
-  char prefix;
-  String_View *sv;
-} Scan;
-
-typedef struct {
-  Scan *items;
-  size_t capacity;
-  size_t count;
-} Scans;
 
 typedef struct {
   Vector2 pos;
@@ -74,42 +33,10 @@ typedef struct {
   size_t capacity;
 } ParticlesCollection;
 
-typedef enum {
-  BTN_NORMAL,
-  BTN_DISABLED,
-  BTN_SELECTED,
-  BTN_COUNT
-} ButtonState;
-
-typedef struct {
-  size_t pad_x;
-  size_t pad_y;
-  Color color;
-  Color hovered_color;
-  Color disabled_color;
-  Color selected_color;
-  size_t outline_thiccness;
-  size_t font_size;
-} ButtonConfig;
-
-typedef struct {
-  Vector2 pos;
-  Vector2 dims;
-  const char *text;
-  ButtonConfig config;
-  ButtonState state;
-} Button;
-
 typedef struct {
   char prefix;
   int score;
 } Player;
-
-typedef struct {
-  Sound *items;
-  size_t capacity;
-  size_t count;
-} Sounds;
 
 typedef enum {
   TT_COUNT_DOWN,
@@ -121,6 +48,12 @@ typedef struct {
   double life_time; // seconds
   TimerType timer_type;
 } Timer;
+
+typedef struct {
+  Color *items;
+  size_t capacity;
+  size_t count;
+} Colors;
 
 typedef enum {
   GS_MENU,
@@ -136,7 +69,6 @@ typedef enum {
   GM_1P_INFINITE,
   GM_COUNT
 } GameMode;
-
 
 typedef struct {
   GameState game_state;
@@ -155,6 +87,7 @@ typedef struct {
   String_Builder *scan_buffer;
   ButtonConfig default_button_config;
   GameMode game_mode;
+  Colors colors;
 } Game;
 
 const char *get_game_mode_text(GameMode gm) {
@@ -180,82 +113,6 @@ double timer_get_elapsed(Timer timer) {
   return GetTime() - timer.start_time;
 }
 
-Rectangle get_barcode_rect(Barcode b) {
-  return (Rectangle) { .x = b.pos.x, .y = b.pos.y, .width = b.tex.width, .height = b.tex.height };
-}
-
-void draw_barcode(Barcode b) {
-  DrawTextureEx(b.tex, b.pos, 0, 1, b.tint);
-  DrawRectangleLinesEx(get_barcode_rect(b), BOX_OUTLINE_THICCNESS, LIME);
-}
-
-void update_barcode(Barcode *me) {
-  if (me->pos.x + me->velo.x < 0 || me->pos.x + me->tex.width + BOX_OUTLINE_THICCNESS + me->velo.x > GetScreenWidth()) {
-    me->velo.x *= -1; 
-  }
-
-
-  if (me->pos.y + me->velo.y < 0 || me->pos.y + me->tex.height + BOX_OUTLINE_THICCNESS + me->velo.y> GetScreenHeight()) {
-    me->velo.y *= -1; 
-  }
-
-  me->pos.x += me->velo.x;
-  me->pos.y += me->velo.y;
-
-}
-
-int get_random_non_zero_int(int _min, int _max) {
-  int v = GetRandomValue(_min, _max);
-  if (v == 0) v = 1;
-  return v;
-}
-
-size_t get_button_width(Button b, Font font) {
-  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
-  int w = td.x + b.config.pad_x*2;
-  return (size_t)w;
-}
-
-size_t get_button_height(Button b, Font font) {
-  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
-  return (size_t)td.y + b.config.pad_y*2;
-}
-
-Font init_font(const char* fp, int font_size, int *codepoints, int codepoint_count) {
-  if (FileExists(fp)) 
-    return LoadFontEx(fp, font_size, codepoints, codepoint_count);
-  return GetFontDefault();
-}
-
-Sound get_random_sound(Sounds *sounds) {
-  return sounds->items[GetRandomValue(0, sounds->count-1)];
-}
-
-String_View *alloc_string_view(const char* text) {
-  String_View *sv = (String_View*)malloc(sizeof(String_View));
-  memset(sv, 0, sizeof(*sv));
-
-  if (text) {
-    sv->count = strlen(text);
-    sv->data = text;
-  }
-  return sv;
-}
-
-String_Builder *alloc_string_builder() {
-  String_Builder *sb = (String_Builder*)malloc(sizeof(String_Builder));
-  memset(sb, 0, sizeof(*sb));
-
-  return sb; 
-}
-
-Particle *alloc_particle() {
-  Particle *p = (Particle*)malloc(sizeof(Particle));
-  memset(p, 0, sizeof(*p));
-  p->living = true;
-  return p;
-}
-
 Particles *alloc_particles() {
   Particles *p = (Particles*)malloc(sizeof(Particles));
   memset(p, 0, sizeof(*p));
@@ -267,34 +124,6 @@ ParticlesCollection *alloc_particles_collection() {
   ParticlesCollection *p = (ParticlesCollection*)malloc(sizeof(ParticlesCollection));
   memset(p, 0, sizeof(*p));
   return p;
-}
-
-Barcodes *alloc_barcodes() {
-  Barcodes *b = (Barcodes*)malloc(sizeof(Barcodes));
-  memset(b, 0, sizeof(*b));
-  return b;
-}
-
-Scan *alloc_scan(const char* text) {
-  Scan *s = (Scan*)malloc(sizeof(Scan));
-  memset(s, 0, sizeof(*s));
-
-  s->sv = alloc_string_view(text);
-
-  return s;
-}
-
-Scans *alloc_scans() {
-  Scans *s = (Scans*)malloc(sizeof(Scans));
-  memset(s, 0, sizeof(*s));
-  return s;
-}
-
-Barcode *alloc_barcode() {
-  Barcode *b = (Barcode*)malloc(sizeof(Barcode));
-  memset(b, 0, sizeof(*b));
-
-  return b;
 }
 
 Player *alloc_player() {
@@ -318,113 +147,14 @@ Timer *alloc_timer() {
   return t;
 }
 
-Scan *process_scan(String_Builder sb) {
-  if (sb.count == 0) return NULL;
-  if ((char)sb.items[0] != (char)KEY_LEFT_SHIFT) {
-    nob_log(ERROR, "Invalid prefix. Expected %c. Got %c", KEY_LEFT_SHIFT, sb.items[0]);
-    return NULL;
-  }
-
-  char prefix = '0';
-  switch (sb.items[1]) {
-    case 48: prefix = ')'; break;
-    case 49: prefix = '!'; break;
-    case 50: prefix = '@'; break;
-    case 51: prefix = '#'; break;
-    case 52: prefix = '$'; break;
-    case 53: prefix = '%'; break;
-    case 54: prefix = '^'; break;
-    case 55: prefix = '&'; break;
-    case 56: prefix = '*'; break;
-    case 57: prefix = '('; break;
-    default: {
-      nob_log(ERROR, "Invalid prefix character. Expected one of 0-9. Got %c", sb.items[1]);
-      return NULL;
-    }
-  }
-
-  String_View *sv = alloc_string_view(temp_sv_to_cstr(sv_from_parts(sb.items, sb.count)));
-  *sv = sv_chop_right(sv, sb.count-2);
-
-  Scan *s = alloc_scan(temp_sv_to_cstr(*sv));
-  s->prefix = prefix;
-  s->sv = sv;
-  return s;
-
+Particle *alloc_particle() {
+  Particle *p = (Particle*)malloc(sizeof(Particle));
+  memset(p, 0, sizeof(*p));
+  p->living = true;
+  return p;
 }
 
-size_t get_id() {
-  static size_t id = 0;
-  return ++id;
-}
-
-Barcode *generate_qr_barcode(int value) {
-
-  const char* txt = (const char *)temp_sprintf("%ld%d", get_id(), value);
-
-  uint8_t modules[qrcode_getBufferSize(3)];
-
-  QRCode qrcode;
-  qrcode_initText(&qrcode, modules, 3, ECC_MEDIUM, txt);
-
-  int scale = 8;
-  int border = 2;
-  int side = qrcode.size + border*2;
-  int imgW = side * scale;
-
-  Image img = GenImageColor(imgW, imgW, WHITE);
-
-  Color *pixels = (Color *)img.data;
-
-  for (int y = 0; y < qrcode.size; y++) {
-    for (int x = 0; x < qrcode.size; x++) {
-      bool m = qrcode_getModule(&qrcode, x, y);
-      Color c = m ? (Color){0,0,0,255} : (Color){255,255,255,255};
-      int startY = (y + border) * scale;
-      int startX = (x + border) * scale;
-      for (int py = 0; py < scale; py++) {
-        for (int px = 0; px < scale; px++) {
-          int ix = startX + px;
-          int iy = startY + py;
-          pixels[iy * imgW + ix] = c;
-        }
-      }
-    }
-  }
-
-  ImageResize(&img, BARCODE_SIZE, BARCODE_SIZE);
-
-  Texture2D tex = LoadTextureFromImage(img);
-
-  UnloadImage(img);
-
-  Barcode *b = alloc_barcode(); 
-  b->pos = (Vector2) { get_random_non_zero_int(BARCODE_SIZE, GetScreenWidth() - BARCODE_SIZE), 
-    get_random_non_zero_int(BARCODE_SIZE, GetScreenHeight() - BARCODE_SIZE) };
-  b->velo = (Vector2) { get_random_non_zero_int(-SPEED_MAX, SPEED_MAX), 
-    get_random_non_zero_int(-SPEED_MAX, SPEED_MAX) };
-  b->tex  = tex;
-  b->name = alloc_string_view(txt);
-  b->value = value;
-  b->living = true;
-
-
-
-  return b;
-}
-
-Barcode *kill_barcode(Scan *scan, Barcodes *bars) {
-  da_foreach(Barcode, b, bars) {
-    nob_log(INFO, "\nb->name: "SV_Fmt"\nscan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
-    if (sv_eq(*b->name, *scan->sv)) {
-      b->living = false;
-      return b;
-    }
-  }
-  return NULL;
-}
-
-Particles *generate_particles(Vector2 start_pos) {
+Particles *generate_particles(Vector2 start_pos, Colors colors) {
 
   Particles *particles = alloc_particles();
   size_t particle_amount = (size_t)get_random_non_zero_int(10, 30); 
@@ -433,7 +163,7 @@ Particles *generate_particles(Vector2 start_pos) {
     Particle *p = alloc_particle();
     p->pos = (Vector2) { .x = start_pos.x, .y = start_pos.y };
     p->radius = (float)get_random_non_zero_int(5, 15);
-    p->color = COLORS[GetRandomValue(0, ARRAY_LEN(COLORS))];
+    p->color = colors.items[GetRandomValue(0, colors.count)];
     p->velo = (Vector2) { .x = get_random_non_zero_int(-20, 20),
       .y = get_random_non_zero_int(-20, 20) };
     p->living = true;
@@ -441,40 +171,6 @@ Particles *generate_particles(Vector2 start_pos) {
   }
 
   return particles;
-}
-
-bool DrawButton(Button b, Font font) {
-  Vector2 td = MeasureTextEx(font, b.text, font.baseSize, 1);
-  int tw = td.x;
-  int w = tw + b.config.pad_x*2;
-  int h = font.baseSize + b.config.pad_y*2;
-  int tx = b.pos.x + b.config.pad_x;
-  int ty = b.pos.y + b.config.pad_y + font.baseSize/6;
-
-  Rectangle bounds = (Rectangle) { .x = b.pos.x, .y = b.pos.y, .width = w, .height = h };
-  bool hovered = CheckCollisionPointRec(GetMousePosition(), bounds);
-
-  Color color = b.config.color;
-  if (b.state == BTN_DISABLED) {
-    color = b.config.disabled_color;
-    hovered = false;
-  } else {
-    if (hovered) {
-      color = b.config.hovered_color;
-    } else {
-      if (b.state == BTN_SELECTED) {
-        color = b.config.selected_color;
-      }
-    }
-  }
-
-  DrawTextEx(font, b.text, (Vector2){.x=tx,.y=ty}, (float)font.baseSize, 1, color);
-  //DrawRectangleLinesEx(bounds, 1, color);
-  if (b.config.outline_thiccness > 0) {
-    DrawRectangleLinesEx(bounds, b.config.outline_thiccness, color);
-  }
-
-  return hovered;
 }
 
 void init_game(Game *game) {
@@ -501,6 +197,20 @@ void init_game(Game *game) {
 
   game->scan_buffer = alloc_string_builder();
 
+  da_append(&game->colors, RED);
+  da_append(&game->colors, GREEN);
+  da_append(&game->colors, BLUE);
+  da_append(&game->colors, YELLOW);
+  da_append(&game->colors, MAGENTA);
+  da_append(&game->colors, LIME);
+  da_append(&game->colors, PINK);
+  da_append(&game->colors, PURPLE);
+  da_append(&game->colors, GOLD);
+  da_append(&game->colors, ORANGE);
+  da_append(&game->colors, SKYBLUE);
+  da_append(&game->colors, DARKBLUE);
+  da_append(&game->colors, DARKGREEN);
+
 }
 
 const char *get_timer_text(Timer timer, size_t padding_amt) {
@@ -509,25 +219,6 @@ const char *get_timer_text(Timer timer, size_t padding_amt) {
   if (timer.timer_type == TT_COUNT_DOWN)
     return temp_sprintf(format, timer.life_time - timer_get_elapsed(timer));
   return temp_sprintf(format, timer_get_elapsed(timer));
-}
-
-Scans *collect_scans(Game *game) {
-  Scans *scans = alloc_scans();
-   
-  int k = GetKeyPressed();
-  while (k > 0) {
-    if (k == KEY_ENTER) {
-      //nob_log(INFO, "raw scan: \n"SV_Fmt, SV_Arg(sb_to_sv(buff)));
-      Scan *scan = process_scan(*game->scan_buffer);
-      game->scan_buffer->count = 0;
-      da_append(scans, *scan);
-    } else {
-      sb_append(game->scan_buffer, (char)k);
-    }
-    k = GetKeyPressed();
-  }
-
-  return scans;
 }
 
 void handle_timer(Timer *timer) {
@@ -546,7 +237,7 @@ void handle_gm_2p_versus(Scan *scan, Game *game) {
   if (game->round_timer) {
     Barcode *b = kill_barcode(scan, game->barcodes);
     if (b) {
-      da_append(game->particles, *generate_particles(b->pos));
+      da_append(game->particles, *generate_particles(b->pos, game->colors));
       if (game->brain_rot) {
         Sound s = get_random_sound(game->sounds);
         PlaySound(s);
@@ -572,7 +263,6 @@ void handle_gm_1p_speed_run(Scan *scan, Game *game) {
   UNUSED(scan);
   UNUSED(game);  
 }
-
 
 void handle_gm_1p_infinite(Scan *scan, Game *game) {
   UNUSED(scan);
@@ -630,7 +320,7 @@ void update_playing(Game *game) {
     game->game_state = GS_MENU;
   } else {
     
-    Scans *scans = collect_scans(game); 
+    Scans *scans = collect_scans(game->scan_buffer); 
     if (scans->count > 0) {
       for (size_t i = 0; i < scans->count; ++i) {
         Scan *scan = &scans->items[i];

@@ -52,8 +52,14 @@ int main(int argc, char** argv) {
   // include nob header file
   cmd_append(&cmd, "-I./thirdparty/nob/");
 
+  // include custom header files
+  cmd_append(&cmd, "-I./includes/");
+
   // define what to create and from what source code
   cmd_append(&cmd, "-o", BUILD_DIR"/main", SRC_DIR"/main.c");
+  cmd_append(&cmd, SRC_DIR"/ui.c");
+  cmd_append(&cmd, SRC_DIR"/barcode.c");
+  cmd_append(&cmd, SRC_DIR"/utils.c");
   
   // link qrcode lib 
   cmd_append(&cmd, "-L./thirdparty/qrcode/");
