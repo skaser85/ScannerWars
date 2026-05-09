@@ -11,7 +11,7 @@ size_t get_button_height(Button b, Font font) {
   return (size_t)td.y + b.config.pad_y*2;
 }
 
-bool DrawButton(Button b, Font font) {
+bool draw_button(Button b, Font font) {
   Vector2 td = MeasureTextEx(font, b.text, font.baseSize, 1);
   int tw = td.x;
   int w = tw + b.config.pad_x*2;
@@ -45,4 +45,31 @@ bool DrawButton(Button b, Font font) {
   return hovered;
 }
 
+bool draw_stepper(Stepper *stepper, Font font) {
+  Vector2 td = MeasureTextEx(font, stepper->effective_text, (float)font.baseSize, 1); 
 
+  Button incr = {0};
+  incr.config = stepper->button_config;
+  incr.text = "+";
+  
+  Button decr = {0};
+  decr.config = stepper->button_config;
+  decr.text = "-";
+
+  size_t w = get_button_width(incr, font)*2+decr.config.pad_x*4+td.x;
+
+  decr.pos = (Vector2) { .x = stepper->pos.x-w/2, .y = stepper->pos.y};
+  incr.pos = (Vector2) { 
+                          .x = decr.pos.x+
+                               get_button_width(incr, font)+
+                               decr.config.pad_x, 
+                          .y = stepper->pos.y
+                        };
+ 
+  stepper->decr = draw_button(decr, font);
+  stepper->incr = draw_button(incr, font);
+
+  DrawTextEx(font, stepper->text, (Vector2){.x=incr.pos.x+get_button_width(incr, font)+incr.config.pad_x*2,.y=stepper->pos.y+font.baseSize/2.5}, font.baseSize, 1, WHITE);
+  
+  return stepper->decr || stepper->incr;
+}

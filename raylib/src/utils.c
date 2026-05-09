@@ -34,11 +34,11 @@ String_Builder *alloc_string_builder() {
   return sb; 
 }
 
-Particle *alloc_particle() {
-  Particle *p = (Particle*)malloc(sizeof(Particle));
-  memset(p, 0, sizeof(*p));
-  p->living = true;
-  return p;
+Sounds *alloc_sounds() {
+  Sounds *s = (Sounds*)malloc(sizeof(Sounds));
+  memset(s, 0, sizeof(*s));
+
+  return s;
 }
 
 

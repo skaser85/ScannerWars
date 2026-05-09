@@ -1,13 +1,15 @@
+#define SRC_DIR "./src"
+#define BUILD_DIR "./build"
+#define THIRD_PARTY_DIR "./thirdparty"
+
+#define RAYLIB_VERSION "5.5"
+
 #define NOB_IMPLEMENTATION
 #include "./thirdparty/nob/nob.h"
 
 #define FLAG_IMPLEMENTATION
 #include "./thirdparty/nob/flag.h"
 
-#define SRC_DIR "./src"
-#define BUILD_DIR "./build"
-
-#define RAYLIB_VERSION "5.5"
 
 static void usage(void)
 {
@@ -41,32 +43,32 @@ int main(int argc, char** argv) {
   cmd_append(&cmd, "cc");
   cmd_append(&cmd, "-Wall");
   cmd_append(&cmd, "-Wextra");
+  cmd_append(&cmd, "-Wno-unknown-pragmas");
   cmd_append(&cmd, "-ggdb");
 
   // include qrcode header file
-  cmd_append(&cmd, "-I./thirdparty/qrcode/");
+  cmd_append(&cmd, "-I"THIRD_PARTY_DIR"/qrcode/");
 
   // include raylib header files 
-  cmd_append(&cmd, "-I./thirdparty/raylib-"RAYLIB_VERSION"_linux_amd64/include/");
+  cmd_append(&cmd, "-I"THIRD_PARTY_DIR"/raylib-"RAYLIB_VERSION"_linux_amd64/include/");
 
   // include nob header file
-  cmd_append(&cmd, "-I./thirdparty/nob/");
+  cmd_append(&cmd, "-I"THIRD_PARTY_DIR"/nob/");
 
   // include custom header files
   cmd_append(&cmd, "-I./includes/");
 
   // define what to create and from what source code
   cmd_append(&cmd, "-o", BUILD_DIR"/main", SRC_DIR"/main.c");
-  cmd_append(&cmd, SRC_DIR"/ui.c");
-  cmd_append(&cmd, SRC_DIR"/barcode.c");
+  cmd_append(&cmd, THIRD_PARTY_DIR"/qrcode/qrcode.c");
   cmd_append(&cmd, SRC_DIR"/utils.c");
+  cmd_append(&cmd, SRC_DIR"/barcode.c");
+  cmd_append(&cmd, SRC_DIR"/ui.c");
+  cmd_append(&cmd, SRC_DIR"/particles.c");
+  cmd_append(&cmd, SRC_DIR"/timer.c");
   
-  // link qrcode lib 
-  cmd_append(&cmd, "-L./thirdparty/qrcode/");
-  cmd_append(&cmd, "-lqrcode");
-
   // link raylib libs
-  cmd_append(&cmd, "-L./thirdparty/raylib-"RAYLIB_VERSION"_linux_amd64/lib/");
+  cmd_append(&cmd, "-L"THIRD_PARTY_DIR"/raylib-"RAYLIB_VERSION"_linux_amd64/lib/");
   cmd_append(&cmd, "-l:libraylib.a");
   cmd_append(&cmd, "-lm");
  

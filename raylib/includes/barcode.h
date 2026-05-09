@@ -1,6 +1,13 @@
 #ifndef BARCODE_H
 #define BARCODE_H
 
+#include "qrcode.h"
+
+#include "raylib.h"
+#include "raymath.h"
+
+#include "nob.h"
+
 #define BOX_OUTLINE_THICCNESS 1
 #define SPEED_MAX 5 
 #define BARCODE_SIZE 75

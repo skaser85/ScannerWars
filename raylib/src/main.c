@@ -1,6 +1,18 @@
+#include <time.h>
+
+#include "utils.h"
+#include "ui.h"
+#include "barcode.h"
+#include "particles.h"
+#include "timer.h"
+
+#include "qrcode.h"
+
+#include "raylib.h"
+#include "raymath.h"
 
 #define NOB_IMPLEMENTATION
-#include "all.h"
+#include "nob.h"
 
 #define ASSETS_DIR "../assets"
 #define IMAGES_DIR ASSETS_DIR"/images"
@@ -10,50 +22,12 @@
 #define QR_DIR IMAGES_DIR"/number-qrcodes"
 #define DM_DIR IMAGTES_DIR"/alphabet-data-matrix"
 
-#define ROUND_TIME_SECS 10
-
-typedef struct {
-  Vector2 pos;
-  float radius;
-  Color color;
-  Vector2 velo;
-  bool living;
-} Particle;
-
-typedef struct {
-  Particle *items;
-  size_t count;
-  size_t capacity;
-  bool living;
-} Particles;
-
-typedef struct {
-  Particles *items;
-  size_t count; 
-  size_t capacity;
-} ParticlesCollection;
+#define DEFAULT_ROUND_TIME_SECS 10
 
 typedef struct {
   char prefix;
   int score;
 } Player;
-
-typedef enum {
-  TT_COUNT_DOWN,
-  TT_COUNT_UP
-} TimerType;
-
-typedef struct {
-  double start_time; // seconds
-  double life_time; // seconds
-  TimerType timer_type;
-} Timer;
-
-typedef struct {
-  Color *items;
-  size_t capacity;
-  size_t count;
-} Colors;
 
 typedef enum {
   GS_MENU,
@@ -88,6 +62,7 @@ typedef struct {
   ButtonConfig default_button_config;
   GameMode game_mode;
   Colors colors;
+  size_t round_time_secs;
 } Game;
 
 const char *get_game_mode_text(GameMode gm) {
@@ -100,77 +75,11 @@ const char *get_game_mode_text(GameMode gm) {
   }
 }
 
-void timer_start(Timer *timer, double life_time) {
-  timer->start_time = GetTime();
-  timer->life_time = life_time;
-}
-
-bool timer_done(Timer timer) {
-  return GetTime() - timer.start_time >= timer.life_time;
-}
-
-double timer_get_elapsed(Timer timer) {
-  return GetTime() - timer.start_time;
-}
-
-Particles *alloc_particles() {
-  Particles *p = (Particles*)malloc(sizeof(Particles));
-  memset(p, 0, sizeof(*p));
-  p->living = true;
-  return p;
-}
-
-ParticlesCollection *alloc_particles_collection() {
-  ParticlesCollection *p = (ParticlesCollection*)malloc(sizeof(ParticlesCollection));
-  memset(p, 0, sizeof(*p));
-  return p;
-}
-
 Player *alloc_player() {
   Player *p = (Player*)malloc(sizeof(Player));
   memset(p, 0, sizeof(*p));
 
   return p;
-}
-
-Sounds *alloc_sounds() {
-  Sounds *s = (Sounds*)malloc(sizeof(Sounds));
-  memset(s, 0, sizeof(*s));
-
-  return s;
-}
-
-Timer *alloc_timer() {
-  Timer *t = (Timer*)malloc(sizeof(Timer));
-  memset(t, 0, sizeof(*t));
-
-  return t;
-}
-
-Particle *alloc_particle() {
-  Particle *p = (Particle*)malloc(sizeof(Particle));
-  memset(p, 0, sizeof(*p));
-  p->living = true;
-  return p;
-}
-
-Particles *generate_particles(Vector2 start_pos, Colors colors) {
-
-  Particles *particles = alloc_particles();
-  size_t particle_amount = (size_t)get_random_non_zero_int(10, 30); 
-
-  for (size_t i = 0; i < particle_amount; ++i) {
-    Particle *p = alloc_particle();
-    p->pos = (Vector2) { .x = start_pos.x, .y = start_pos.y };
-    p->radius = (float)get_random_non_zero_int(5, 15);
-    p->color = colors.items[GetRandomValue(0, colors.count)];
-    p->velo = (Vector2) { .x = get_random_non_zero_int(-20, 20),
-      .y = get_random_non_zero_int(-20, 20) };
-    p->living = true;
-    da_append(particles, *p);
-  }
-
-  return particles;
 }
 
 void init_game(Game *game) {
@@ -213,27 +122,8 @@ void init_game(Game *game) {
 
 }
 
-const char *get_timer_text(Timer timer, size_t padding_amt) {
-  const char *format = temp_sprintf("%%.%ldf", padding_amt);
-  // "%.0f"
-  if (timer.timer_type == TT_COUNT_DOWN)
-    return temp_sprintf(format, timer.life_time - timer_get_elapsed(timer));
-  return temp_sprintf(format, timer_get_elapsed(timer));
-}
-
-void handle_timer(Timer *timer) {
-  if (timer == NULL) {
-    timer = alloc_timer();
-    timer->timer_type = TT_COUNT_DOWN;
-    timer_start(timer, ROUND_TIME_SECS);
-  }
-  if (timer_done(*timer)) {
-    timer = NULL;
-  }
-}
-
 void handle_gm_2p_versus(Scan *scan, Game *game) {
-  handle_timer(game->round_timer);
+  handle_timer(game->round_timer, DEFAULT_ROUND_TIME_SECS);
   if (game->round_timer) {
     Barcode *b = kill_barcode(scan, game->barcodes);
     if (b) {
@@ -267,29 +157,6 @@ void handle_gm_1p_speed_run(Scan *scan, Game *game) {
 void handle_gm_1p_infinite(Scan *scan, Game *game) {
   UNUSED(scan);
   UNUSED(game);
-}
-
-void update_particles(ParticlesCollection *particles) {
-  da_foreach(Particles, p, particles) {
-    if (p->living) {
-      size_t dead_count = 0;
-      da_foreach(Particle, it, p) {
-        if (it->living) {
-          if (
-              (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
-              (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
-             ) {
-            it->living = false;
-            dead_count++;
-          } else {
-            it->pos = Vector2Add(it->pos, it->velo);
-          }
-        }
-      }
-      if (dead_count >= p->count)
-        p->living = false;
-    }
-  }
 }
 
 void init_gm_2p_versus(Game *game) {
@@ -396,25 +263,45 @@ bool draw_menu(Game *game) {
   DrawTextEx(game->title_font, game->title, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=100}, 200, 1, color); 
 
   bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+  size_t y = 400;
 
   Button start = {0};
   start.config = game->default_button_config;
   start.text = "Start New Game";
   start.config.outline_thiccness = 0;
-  start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start, game->item_font)/2, .y = 400};
-  if (DrawButton(start, game->item_font)) {
+  start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start, game->item_font)/2, .y = y };
+  if (draw_button(start, game->item_font)) {
     if (left_clicked) {
       init_game(game);
       game->game_state = GS_PLAYING;
     }
   }
 
+
+  y = start.pos.y + get_button_height(start, game->item_font) + game->default_button_config.pad_y*4;
+  Stepper round_time_stepper = {0};
+  round_time_stepper.text = temp_sprintf("Round Time (sec): %03ld", game->round_time_secs);
+  round_time_stepper.effective_text = "Round Time (sec): ";
+  round_time_stepper.pos = (Vector2) { .x = GetScreenWidth()/2, .y = y };
+  round_time_stepper.button_config = game->default_button_config;
+  round_time_stepper.button_config.outline_thiccness = 2;
+  if (draw_stepper(&round_time_stepper, game->item_font)) {
+    if (left_clicked) {
+      if (round_time_stepper.incr) game->round_time_secs += 1;
+      if (round_time_stepper.decr) game->round_time_secs -= 1;
+    }
+  }
+  
+  y = round_time_stepper.pos.y + game->item_font.baseSize + game->default_button_config.pad_y*4;
   Button resume = {0};
   resume.config = game->default_button_config;
   resume.text = "Resume";
   resume.config.outline_thiccness = 0;
-  resume.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(resume, game->item_font)/2, .y = start.pos.y + get_button_height(start, game->item_font) + resume.config.pad_y*4 };
-  if (DrawButton(resume, game->item_font)) {
+  resume.pos = (Vector2) { 
+      .x = GetScreenWidth()/2-get_button_width(resume, game->item_font)/2, 
+      .y = y
+  };
+  if (draw_button(resume, game->item_font)) {
     if (left_clicked) {
       game->game_state = GS_PLAYING;
     }
@@ -424,8 +311,10 @@ bool draw_menu(Game *game) {
   game_mode_btn.config = game->default_button_config;
   game_mode_btn.text = "Select Game Mode"; 
   game_mode_btn.config.outline_thiccness = 0;
-  game_mode_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(game_mode_btn, game->item_font)/2, .y = resume.pos.y + get_button_height(start, game->item_font) + game_mode_btn.config.pad_y*4 };
-  if (DrawButton(game_mode_btn, game->item_font)) {
+  game_mode_btn.pos = (Vector2) { 
+      .x = GetScreenWidth()/2-get_button_width(game_mode_btn, game->item_font)/2, 
+      .y = resume.pos.y + get_button_height(start, game->item_font) + game_mode_btn.config.pad_y*4 };
+  if (draw_button(game_mode_btn, game->item_font)) {
     if (left_clicked) {
       game->game_state = GS_SELECT_GM;
     }
@@ -436,7 +325,7 @@ bool draw_menu(Game *game) {
   exit_btn.text = "Exit";
   exit_btn.config.outline_thiccness = 0;
   exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game->item_font)/2, .y = game_mode_btn.pos.y + get_button_height(game_mode_btn, game->item_font) + exit_btn.config.pad_y*4 };
-  if (DrawButton(exit_btn, game->item_font)) {
+  if (draw_button(exit_btn, game->item_font)) {
     if (left_clicked) {
       EndDrawing();
       return true; 
@@ -468,7 +357,7 @@ void draw_select_game_mode(Game *game) {
     opt.config.outline_thiccness = 0;
     opt.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(opt, game->item_font)/2, .y = y};
     if (game->game_mode == i) opt.state = BTN_SELECTED;
-    if (DrawButton(opt, game->item_font)) {
+    if (draw_button(opt, game->item_font)) {
       if (left_clicked) {
         game->game_mode = i;
         game->barcodes->count = 0;
@@ -489,7 +378,7 @@ void draw_select_game_mode(Game *game) {
   return_to_menu_btn.text = "Return to Main Menu";
   return_to_menu_btn.config.outline_thiccness = 5;
   return_to_menu_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(return_to_menu_btn, game->item_font)/2, .y = y};
-  if (DrawButton(return_to_menu_btn, game->item_font)) {
+  if (draw_button(return_to_menu_btn, game->item_font)) {
     if (left_clicked) {
       game->game_state = GS_MENU;
     }
@@ -532,7 +421,7 @@ void draw_game_over(Game *game) {
   return_to_menu_btn.text = "Return to Main Menu";
   return_to_menu_btn.config.outline_thiccness = 5;
   return_to_menu_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(return_to_menu_btn, game->item_font)/2, .y = game->item_font.baseSize*12 + return_to_menu_btn.config.pad_y*4 };
-  if (DrawButton(return_to_menu_btn, game->item_font)) {
+  if (draw_button(return_to_menu_btn, game->item_font)) {
     if (left_clicked) {
       init_game(game);
       game->game_state = GS_MENU;
@@ -574,6 +463,7 @@ int main() {
   game.brain_rot = false;
   game.default_button_config = default_button_config;
   game.game_mode = GM_2P_VERSUS;
+  game.round_time_secs = 60;
 
   while (!WindowShouldClose()) {
     if (game.game_state == GS_PLAYING) {

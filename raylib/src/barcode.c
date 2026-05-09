@@ -1,3 +1,4 @@
+#include "utils.h"
 #include "barcode.h"
 
 Rectangle get_barcode_rect(Barcode b) {
@@ -158,7 +159,7 @@ Barcode *kill_barcode(Scan *scan, Barcodes *bars) {
   return NULL;
 }
 
-Scans *collect_scans(String_Buffer *sb) {
+Scans *collect_scans(String_Builder *sb) {
   Scans *scans = alloc_scans();
    
   int k = GetKeyPressed();
@@ -166,7 +167,7 @@ Scans *collect_scans(String_Buffer *sb) {
     if (k == KEY_ENTER) {
       //nob_log(INFO, "raw scan: \n"SV_Fmt, SV_Arg(sb_to_sv(buff)));
       Scan *scan = process_scan(*sb);
-      game->scan_buffer->count = 0;
+      sb->count = 0;
       da_append(scans, *scan);
     } else {
       sb_append(sb, (char)k);
