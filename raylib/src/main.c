@@ -48,6 +48,12 @@ typedef struct {
 } Scan;
 
 typedef struct {
+  Scan *items;
+  size_t capacity;
+  size_t count;
+} Scans;
+
+typedef struct {
   Vector2 pos;
   float radius;
   Color color;
@@ -68,11 +74,20 @@ typedef struct {
   size_t capacity;
 } ParticlesCollection;
 
+typedef enum {
+  BTN_NORMAL,
+  BTN_DISABLED,
+  BTN_SELECTED,
+  BTN_COUNT
+} ButtonState;
+
 typedef struct {
   size_t pad_x;
   size_t pad_y;
   Color color;
   Color hovered_color;
+  Color disabled_color;
+  Color selected_color;
   size_t outline_thiccness;
   size_t font_size;
 } ButtonConfig;
@@ -82,6 +97,7 @@ typedef struct {
   Vector2 dims;
   const char *text;
   ButtonConfig config;
+  ButtonState state;
 } Button;
 
 typedef struct {
@@ -95,17 +111,32 @@ typedef struct {
   size_t count;
 } Sounds;
 
+typedef enum {
+  TT_COUNT_DOWN,
+  TT_COUNT_UP
+} TimerType;
+
 typedef struct {
   double start_time; // seconds
   double life_time; // seconds
+  TimerType timer_type;
 } Timer;
 
 typedef enum {
   GS_MENU,
+  GS_SELECT_GM,
   GS_PLAYING,
   GS_GAME_OVER,
   GS_COUNT
 } GameState;
+
+typedef enum {
+  GM_2P_VERSUS,
+  GM_1P_SPEED_RUN,
+  GM_1P_INFINITE,
+  GM_COUNT
+} GameMode;
+
 
 typedef struct {
   GameState game_state;
@@ -123,7 +154,18 @@ typedef struct {
   Timer *round_timer;
   String_Builder *scan_buffer;
   ButtonConfig default_button_config;
+  GameMode game_mode;
 } Game;
+
+const char *get_game_mode_text(GameMode gm) {
+  switch (gm) {
+    case GM_2P_VERSUS: return "2P Versus";
+    case GM_1P_SPEED_RUN: return "1P Speed Run";
+    case GM_1P_INFINITE: return "1P Infinite";
+    case GM_COUNT: return "you shouldn't be seeing this (GM_COUNT)";
+    default: return temp_sprintf("idk, mang (GameMode: %d)", gm); 
+  }
+}
 
 void timer_start(Timer *timer, double life_time) {
   timer->start_time = GetTime();
@@ -166,6 +208,27 @@ int get_random_non_zero_int(int _min, int _max) {
   int v = GetRandomValue(_min, _max);
   if (v == 0) v = 1;
   return v;
+}
+
+size_t get_button_width(Button b, Font font) {
+  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
+  int w = td.x + b.config.pad_x*2;
+  return (size_t)w;
+}
+
+size_t get_button_height(Button b, Font font) {
+  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
+  return (size_t)td.y + b.config.pad_y*2;
+}
+
+Font init_font(const char* fp, int font_size, int *codepoints, int codepoint_count) {
+  if (FileExists(fp)) 
+    return LoadFontEx(fp, font_size, codepoints, codepoint_count);
+  return GetFontDefault();
+}
+
+Sound get_random_sound(Sounds *sounds) {
+  return sounds->items[GetRandomValue(0, sounds->count-1)];
 }
 
 String_View *alloc_string_view(const char* text) {
@@ -218,6 +281,12 @@ Scan *alloc_scan(const char* text) {
 
   s->sv = alloc_string_view(text);
 
+  return s;
+}
+
+Scans *alloc_scans() {
+  Scans *s = (Scans*)malloc(sizeof(Scans));
+  memset(s, 0, sizeof(*s));
   return s;
 }
 
@@ -374,19 +443,6 @@ Particles *generate_particles(Vector2 start_pos) {
   return particles;
 }
 
-void load_colors() {
-  COLORS[0] = RED;
-  COLORS[1] = BLUE;
-  COLORS[2] = GREEN;
-  COLORS[3] = PINK;
-  COLORS[4] = LIME;
-  COLORS[5] = YELLOW;
-  COLORS[6] = VIOLET;
-  COLORS[7] = GOLD;
-  COLORS[8] = SKYBLUE;
-  COLORS[9] = WHITE;
-}
-
 bool DrawButton(Button b, Font font) {
   Vector2 td = MeasureTextEx(font, b.text, font.baseSize, 1);
   int tw = td.x;
@@ -397,7 +453,20 @@ bool DrawButton(Button b, Font font) {
 
   Rectangle bounds = (Rectangle) { .x = b.pos.x, .y = b.pos.y, .width = w, .height = h };
   bool hovered = CheckCollisionPointRec(GetMousePosition(), bounds);
-  Color color = hovered ? b.config.hovered_color : b.config.color;
+
+  Color color = b.config.color;
+  if (b.state == BTN_DISABLED) {
+    color = b.config.disabled_color;
+    hovered = false;
+  } else {
+    if (hovered) {
+      color = b.config.hovered_color;
+    } else {
+      if (b.state == BTN_SELECTED) {
+        color = b.config.selected_color;
+      }
+    }
+  }
 
   DrawTextEx(font, b.text, (Vector2){.x=tx,.y=ty}, (float)font.baseSize, 1, color);
   //DrawRectangleLinesEx(bounds, 1, color);
@@ -406,17 +475,6 @@ bool DrawButton(Button b, Font font) {
   }
 
   return hovered;
-}
-
-size_t get_button_width(Button b, Font font) {
-  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
-  int w = td.x + b.config.pad_x*2;
-  return (size_t)w;
-}
-
-size_t get_button_height(Button b, Font font) {
-  Vector2 td = MeasureTextEx(font, b.text, (float)font.baseSize, 1);
-  return (size_t)td.y + b.config.pad_y*2;
 }
 
 void init_game(Game *game) {
@@ -429,19 +487,13 @@ void init_game(Game *game) {
   game->p1->prefix = '#';
   game->p2->prefix = '@';
 
-  Barcode *b = generate_qr_barcode(1);
-  b->tint = WHITE;
-  da_append(game->barcodes, *b);
-
-  b = generate_qr_barcode(1);
-  b->tint = WHITE; 
-  da_append(game->barcodes, *b);
-
-  game->sounds = alloc_sounds();
-  FilePathList soundFiles = LoadDirectoryFiles(SOUNDS_DIR);
-  for (size_t i = 0; i < soundFiles.count; ++i){
-    if (strcmp("boom.mp3", GetFileName(soundFiles.paths[i])) != 0) {
-      da_append(game->sounds, LoadSound(soundFiles.paths[i]));
+  if (game->sounds == NULL) {
+    game->sounds = alloc_sounds();
+    FilePathList soundFiles = LoadDirectoryFiles(SOUNDS_DIR);
+    for (size_t i = 0; i < soundFiles.count; ++i){
+      if (strcmp("boom.mp3", GetFileName(soundFiles.paths[i])) != 0) {
+        da_append(game->sounds, LoadSound(soundFiles.paths[i]));
+      }
     }
   }
 
@@ -451,107 +503,202 @@ void init_game(Game *game) {
 
 }
 
-Font init_font(const char* fp, int font_size, int *codepoints, int codepoint_count) {
-  if (FileExists(fp)) 
-    return LoadFontEx(fp, font_size, codepoints, codepoint_count);
-  return GetFontDefault();
+const char *get_timer_text(Timer timer, size_t padding_amt) {
+  const char *format = temp_sprintf("%%.%ldf", padding_amt);
+  // "%.0f"
+  if (timer.timer_type == TT_COUNT_DOWN)
+    return temp_sprintf(format, timer.life_time - timer_get_elapsed(timer));
+  return temp_sprintf(format, timer_get_elapsed(timer));
 }
 
-Sound get_random_sound(Sounds *sounds) {
-  return sounds->items[GetRandomValue(0, sounds->count-1)];
-}
-
-void draw_playing(Game *game) {
-  if (IsKeyPressed(KEY_ESCAPE)) {
-    game->game_state = GS_MENU;
-  } else {
-    if (game->round_timer == NULL) {
-      game->round_timer = alloc_timer(); 
-      timer_start(game->round_timer, ROUND_TIME_SECS);
-    }
-    if (timer_done(*game->round_timer)) {
-      game->game_state = GS_GAME_OVER;
-      game->round_timer = NULL;
+Scans *collect_scans(Game *game) {
+  Scans *scans = alloc_scans();
+   
+  int k = GetKeyPressed();
+  while (k > 0) {
+    if (k == KEY_ENTER) {
+      //nob_log(INFO, "raw scan: \n"SV_Fmt, SV_Arg(sb_to_sv(buff)));
+      Scan *scan = process_scan(*game->scan_buffer);
+      game->scan_buffer->count = 0;
+      da_append(scans, *scan);
     } else {
-      DrawText(temp_sprintf("%.0f", game->round_timer->life_time - timer_get_elapsed(*game->round_timer)), GetScreenWidth()-200, 100, 64, WHITE);
-      int k = GetKeyPressed();
-      while (k > 0) {
-        if (k == KEY_ENTER) {
-          //nob_log(INFO, "raw scan: \n"SV_Fmt, SV_Arg(sb_to_sv(buff)));
-          Scan *scan = process_scan(*game->scan_buffer);
-          if (scan) {
-            //nob_log(INFO, "\nPREFIX: %c\nSCAN: "SV_Fmt, scan->prefix, SV_Arg(*scan->sv));
-            Barcode *b = kill_barcode(scan, game->barcodes);
-            if (b) {
-              //nob_log(INFO, "x: %f, y: %f", b->pos.x, b->pos.y);
-              da_append(game->particles, *generate_particles(b->pos));
-              if (game->brain_rot) {
-                Sound s = get_random_sound(game->sounds);
-                PlaySound(s);
-              } else {
-                PlaySound(game->boom);
-              }
-              if (scan->prefix == game->p1->prefix) {
-                game->p1->score += b->value;
-              } else if (scan->prefix == game->p2->prefix) {
-                game->p2->score += b->value;
-              }
-              b = generate_qr_barcode(1);
-              b->tint = WHITE;
-              da_append(game->barcodes, *b);
-              b = generate_qr_barcode(1);
-              b->tint = WHITE;
-              da_append(game->barcodes, *b);
-            }
+      sb_append(game->scan_buffer, (char)k);
+    }
+    k = GetKeyPressed();
+  }
 
-          }
-          game->scan_buffer->count = 0;
-        } else {
-          sb_append(game->scan_buffer, (char)k);
-        }
-        k = GetKeyPressed();
+  return scans;
+}
+
+void handle_timer(Timer *timer) {
+  if (timer == NULL) {
+    timer = alloc_timer();
+    timer->timer_type = TT_COUNT_DOWN;
+    timer_start(timer, ROUND_TIME_SECS);
+  }
+  if (timer_done(*timer)) {
+    timer = NULL;
+  }
+}
+
+void handle_gm_2p_versus(Scan *scan, Game *game) {
+  handle_timer(game->round_timer);
+  if (game->round_timer) {
+    Barcode *b = kill_barcode(scan, game->barcodes);
+    if (b) {
+      da_append(game->particles, *generate_particles(b->pos));
+      if (game->brain_rot) {
+        Sound s = get_random_sound(game->sounds);
+        PlaySound(s);
+      } else {
+        PlaySound(game->boom);
       }
-
-      da_foreach(Barcode, b, game->barcodes) {
-        if (b->living) update_barcode(b);
+      if (scan->prefix == game->p1->prefix) {
+        game->p1->score += b->value;
+      } else if (scan->prefix == game->p2->prefix) {
+        game->p2->score += b->value;
       }
-
-      ClearBackground(GetColor(0x181818FF));
-
-      da_foreach(Barcode, b, game->barcodes) {
-        if (b->living) draw_barcode(*b);
-      }
-
-      da_foreach(Particles, p, game->particles) {
-        if (p->living) {
-          size_t dead_count = 0;
-          da_foreach(Particle, it, p) {
-            if (it->living) {
-              if (
-                  (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
-                  (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
-                 ) {
-                it->living = false;
-                dead_count++;
-              } else {
-                it->pos = Vector2Add(it->pos, it->velo);
-                DrawCircleV(it->pos, it->radius, it->color);
-              }
-            }
-          }
-          if (dead_count >= p->count)
-            p->living = false;
-        }
-      }
-
-      DrawTextEx(game->player_font, temp_sprintf("Player 1 Score: %d", game->p1->score), (Vector2){.x=50,.y=100}, 28, 1, RAYWHITE);
-      DrawTextEx(game->player_font, temp_sprintf("Player 2 Score: %d", game->p2->score), (Vector2){.x=50,.y=150}, 28, 1, RAYWHITE);
-
+      b = generate_qr_barcode(1);
+      b->tint = WHITE;
+      da_append(game->barcodes, *b);
+      b = generate_qr_barcode(1);
+      b->tint = WHITE;
+      da_append(game->barcodes, *b);
     }
   }
 }
 
+void handle_gm_1p_speed_run(Scan *scan, Game *game) {
+  UNUSED(scan);
+  UNUSED(game);  
+}
+
+
+void handle_gm_1p_infinite(Scan *scan, Game *game) {
+  UNUSED(scan);
+  UNUSED(game);
+}
+
+void update_particles(ParticlesCollection *particles) {
+  da_foreach(Particles, p, particles) {
+    if (p->living) {
+      size_t dead_count = 0;
+      da_foreach(Particle, it, p) {
+        if (it->living) {
+          if (
+              (it->pos.x < 0 || it->pos.x > GetScreenWidth()) &&
+              (it->pos.y < 0 || it->pos.y > GetScreenHeight()) 
+             ) {
+            it->living = false;
+            dead_count++;
+          } else {
+            it->pos = Vector2Add(it->pos, it->velo);
+          }
+        }
+      }
+      if (dead_count >= p->count)
+        p->living = false;
+    }
+  }
+}
+
+void init_gm_2p_versus(Game *game) {
+  Barcode *b = generate_qr_barcode(1);
+  b->tint = WHITE;
+  da_append(game->barcodes, *b);
+
+  b = generate_qr_barcode(1);
+  b->tint = WHITE; 
+  da_append(game->barcodes, *b);
+}
+
+void init_gm_1p_speed_run(Game *game) {
+  Barcode *b = generate_qr_barcode(1);
+  b->tint = WHITE;
+  da_append(game->barcodes, *b);
+}
+
+void init_gm_1p_infinite(Game *game) {
+  Barcode *b = generate_qr_barcode(1);
+  b->tint = WHITE;
+  da_append(game->barcodes, *b);
+}
+
+void update_playing(Game *game) {
+
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    game->game_state = GS_MENU;
+  } else {
+    
+    Scans *scans = collect_scans(game); 
+    if (scans->count > 0) {
+      for (size_t i = 0; i < scans->count; ++i) {
+        Scan *scan = &scans->items[i];
+        switch (game->game_mode) {
+          case GM_2P_VERSUS: handle_gm_2p_versus(scan, game); break;
+          case GM_1P_SPEED_RUN: handle_gm_1p_speed_run(scan, game); break;
+          case GM_1P_INFINITE: handle_gm_1p_infinite(scan, game); break;
+          default: nob_log(ERROR, "Unhandled game mode (update_playing) %d %s", game->game_mode, get_game_mode_text(game->game_mode));
+        } 
+      }
+    }
+
+    da_foreach(Barcode, b, game->barcodes) {
+      if (b->living) update_barcode(b);
+    }
+
+    update_particles(game->particles);
+  }
+}
+
+void draw_gm_2p_versus(Game *game) {
+  if (game->round_timer) {
+    DrawText(get_timer_text(*game->round_timer, 0), GetScreenWidth()-200, 100, 64, WHITE);
+  }
+  DrawTextEx(game->player_font, temp_sprintf("Player 1 Score: %d", game->p1->score), (Vector2){.x=50,.y=100}, 28, 1, RAYWHITE);
+  DrawTextEx(game->player_font, temp_sprintf("Player 2 Score: %d", game->p2->score), (Vector2){.x=50,.y=150}, 28, 1, RAYWHITE);
+}
+
+void draw_gm_1p_speed_run(Game *game) {
+  UNUSED(game);
+}
+
+void draw_gm_1p_infinite(Game *game) {
+  UNUSED(game);
+}
+
+void draw_playing(Game *game) {
+  BeginDrawing();
+
+  ClearBackground(GetColor(0x181818FF));
+
+  switch (game->game_mode) {
+    case GM_2P_VERSUS: draw_gm_2p_versus(game); break;
+    case GM_1P_SPEED_RUN: draw_gm_1p_speed_run(game); break;
+    case GM_1P_INFINITE: draw_gm_1p_infinite(game); break;
+    default: nob_log(ERROR, "Unhandled game mode (draw_playing) %d %s", game->game_mode, get_game_mode_text(game->game_mode));
+  } 
+  
+  da_foreach(Barcode, b, game->barcodes) {
+    if (b->living) draw_barcode(*b);
+  }
+
+  da_foreach(Particles, p, game->particles) {
+    if (p->living) {
+      da_foreach(Particle, it, p) {
+        if (it->living) {
+          DrawCircleV(it->pos, it->radius, it->color);
+        }
+      }
+    }
+  }
+
+  EndDrawing();
+}
+
 bool draw_menu(Game *game) {
+  BeginDrawing();
+
   ClearBackground(GetColor(0x360036FF));
 
   Vector2 td = MeasureTextEx(game->title_font, game->title, game->title_font.baseSize, 1);
@@ -583,18 +730,14 @@ bool draw_menu(Game *game) {
     }
   }
 
-  Button brain_rot_btn = {0};
-  brain_rot_btn.config = game->default_button_config;
-  if (game->brain_rot) {
-    brain_rot_btn.text = "Deactivate Brain Rot";
-  } else {
-    brain_rot_btn.text = "Activate Brain Rot";
-  }
-  brain_rot_btn.config.outline_thiccness = 0;
-  brain_rot_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(brain_rot_btn, game->item_font)/2, .y = resume.pos.y + get_button_height(start, game->item_font) + brain_rot_btn.config.pad_y*4 };
-  if (DrawButton(brain_rot_btn, game->item_font)) {
+  Button game_mode_btn = {0};
+  game_mode_btn.config = game->default_button_config;
+  game_mode_btn.text = "Select Game Mode"; 
+  game_mode_btn.config.outline_thiccness = 0;
+  game_mode_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(game_mode_btn, game->item_font)/2, .y = resume.pos.y + get_button_height(start, game->item_font) + game_mode_btn.config.pad_y*4 };
+  if (DrawButton(game_mode_btn, game->item_font)) {
     if (left_clicked) {
-      game->brain_rot = !game->brain_rot;
+      game->game_state = GS_SELECT_GM;
     }
   }
 
@@ -602,23 +745,78 @@ bool draw_menu(Game *game) {
   exit_btn.config = game->default_button_config;
   exit_btn.text = "Exit";
   exit_btn.config.outline_thiccness = 0;
-  exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game->item_font)/2, .y = brain_rot_btn.pos.y + get_button_height(brain_rot_btn, game->item_font) + exit_btn.config.pad_y*4 };
+  exit_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(exit_btn, game->item_font)/2, .y = game_mode_btn.pos.y + get_button_height(game_mode_btn, game->item_font) + exit_btn.config.pad_y*4 };
   if (DrawButton(exit_btn, game->item_font)) {
     if (left_clicked) {
+      EndDrawing();
       return true; 
     }
   }
 
+  EndDrawing();
   return false; 
 }
 
+void draw_select_game_mode(Game *game) {
+  BeginDrawing();
+
+  ClearBackground(GetColor(0x360036FF));
+
+  Vector2 td = MeasureTextEx(game->title_font, "Select Game Mode", game->title_font.baseSize, 1);
+  Color color = (int)GetTime() % 2 == 0 ? SKYBLUE : WHITE;
+
+  size_t y = 100;
+  DrawTextEx(game->title_font, "Select Game Mode", (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=100},200,1,color);
+
+  bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
+  y += 300;
+  for (size_t i = 0; i < GM_COUNT; ++i) {
+    Button opt = {0};
+    opt.config = game->default_button_config;
+    opt.text = get_game_mode_text(i);
+    opt.config.outline_thiccness = 0;
+    opt.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(opt, game->item_font)/2, .y = y};
+    if (game->game_mode == i) opt.state = BTN_SELECTED;
+    if (DrawButton(opt, game->item_font)) {
+      if (left_clicked) {
+        game->game_mode = i;
+        game->barcodes->count = 0;
+        game->particles->count = 0;
+        switch (game->game_mode) {
+          case GM_2P_VERSUS: init_gm_2p_versus(game); break;
+          case GM_1P_SPEED_RUN: init_gm_1p_speed_run(game); break;
+          case GM_1P_INFINITE: init_gm_1p_infinite(game); break;
+          default: nob_log(ERROR, "Unhandled game mode (draw_select_game_mode) %d %s", game->game_mode, get_game_mode_text(game->game_mode));
+        }
+      }
+    }
+    y = opt.pos.y + get_button_height(opt, game->item_font) + opt.config.pad_y*4;
+  }
+
+  Button return_to_menu_btn = {0};
+  return_to_menu_btn.config = game->default_button_config;
+  return_to_menu_btn.text = "Return to Main Menu";
+  return_to_menu_btn.config.outline_thiccness = 5;
+  return_to_menu_btn.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(return_to_menu_btn, game->item_font)/2, .y = y};
+  if (DrawButton(return_to_menu_btn, game->item_font)) {
+    if (left_clicked) {
+      game->game_state = GS_MENU;
+    }
+  }
+
+  EndDrawing();
+}
+
 void draw_game_over(Game *game) {
+  BeginDrawing();
+
   ClearBackground(GetColor(0x003636FF));
 
   const char *p1_score = temp_sprintf("Player 1 Final Score: %d", game->p1->score);
   Vector2 td = MeasureTextEx(game->item_font, p1_score, (float)game->item_font.baseSize, 1); 
   DrawTextEx(game->item_font, p1_score, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=200}, game->item_font.baseSize, 1, WHITE);
-  
+
   const char *p2_score = temp_sprintf("Player 2 Final Score: %d", game->p2->score);
   td = MeasureTextEx(game->item_font, p2_score, (float)game->item_font.baseSize, 1); 
   DrawTextEx(game->item_font, p2_score, (Vector2){.x=GetScreenWidth()/2-td.x/2,.y=200+game->item_font.baseSize*1.5}, game->item_font.baseSize, 1, WHITE);
@@ -638,7 +836,7 @@ void draw_game_over(Game *game) {
   }
 
   bool left_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-  
+
   Button return_to_menu_btn = {0};
   return_to_menu_btn.config = game->default_button_config;
   return_to_menu_btn.text = "Return to Main Menu";
@@ -650,28 +848,29 @@ void draw_game_over(Game *game) {
       game->game_state = GS_MENU;
     }
   }
+
+  EndDrawing();
 }
 
 int main() {
 
   InitWindow(1920, 1080, "Scanner Wars");
   SetWindowState(FLAG_WINDOW_RESIZABLE);
-  SetWindowMonitor(0);
   SetTargetFPS(60);
+  SetExitKey(KEY_NULL);
   InitAudioDevice();
 
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   SetRandomSeed(ts.tv_nsec);
-  SetExitKey(KEY_NULL);
-
-  load_colors();
 
   ButtonConfig default_button_config = {0};
   default_button_config.pad_x = 20;
   default_button_config.pad_y = 10;
   default_button_config.color = WHITE;
   default_button_config.hovered_color = SKYBLUE;
+  default_button_config.disabled_color = GRAY;
+  default_button_config.selected_color = PINK;
   default_button_config.outline_thiccness = 1;
   default_button_config.font_size = 28;
 
@@ -684,28 +883,19 @@ int main() {
   game.boom = LoadSound(SOUNDS_DIR"/boom.mp3");
   game.brain_rot = false;
   game.default_button_config = default_button_config;
+  game.game_mode = GM_2P_VERSUS;
 
-  nob_log(INFO, "Current Monitor: %d", GetCurrentMonitor());
   while (!WindowShouldClose()) {
-
-    if (IsKeyPressed(KEY_F11)) {
-      if (IsWindowMaximized()) {
-        MaximizeWindow();
-      } else {
-        RestoreWindow();
-      }
-    }
-
-    BeginDrawing(); 
     if (game.game_state == GS_PLAYING) {
+      update_playing(&game);
       draw_playing(&game); 
     } else if (game.game_state == GS_MENU) {
       if (draw_menu(&game)) break; 
     } else if (game.game_state == GS_GAME_OVER) {
       draw_game_over(&game); 
+    } else if (game.game_state == GS_SELECT_GM) {
+      draw_select_game_mode(&game);
     }
-    EndDrawing();
-
   }
 
   da_foreach(Barcode, b, game.barcodes) {
