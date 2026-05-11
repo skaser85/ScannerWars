@@ -1,4 +1,4 @@
 *.pem
-nob
+./nob
 nob.old
 build/
