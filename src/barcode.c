@@ -149,7 +149,8 @@ Barcode *generate_qr_barcode(int value) {
 }
 
 Barcode *kill_barcode(Scan *scan, Barcodes *bars) {
-  da_foreach(Barcode, b, bars) {
+  for (size_t i = 0; i < bars->count; ++i) {
+    Barcode *b = bars->items[i];
     nob_log(INFO, "\nb->name: "SV_Fmt"\nscan->sv: "SV_Fmt, SV_Arg(*b->name), SV_Arg(*scan->sv));
     if (sv_eq(*b->name, *scan->sv)) {
       b->living = false;

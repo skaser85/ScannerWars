@@ -22,8 +22,6 @@
 #define QR_DIR IMAGES_DIR"/number-qrcodes"
 #define DM_DIR IMAGTES_DIR"/alphabet-data-matrix"
 
-#define DEFAULT_ROUND_TIME_SECS 10
-
 typedef struct {
   char prefix;
   int score;
@@ -63,6 +61,7 @@ typedef struct {
   GameMode game_mode;
   Colors colors;
   size_t round_time_secs;
+  size_t default_round_time_secs;
 } Game;
 
 const char *get_game_mode_text(GameMode gm) {
@@ -103,6 +102,7 @@ void init_game(Game *game) {
   }
 
   game->round_timer = NULL;
+  game->default_round_time_secs = 60;
 
   game->scan_buffer = alloc_string_builder();
 
@@ -123,7 +123,6 @@ void init_game(Game *game) {
 }
 
 void handle_gm_2p_versus(Scan *scan, Game *game) {
-  handle_timer(game->round_timer, DEFAULT_ROUND_TIME_SECS);
   if (game->round_timer) {
     Barcode *b = kill_barcode(scan, game->barcodes);
     if (b) {
@@ -141,10 +140,10 @@ void handle_gm_2p_versus(Scan *scan, Game *game) {
       }
       b = generate_qr_barcode(1);
       b->tint = WHITE;
-      da_append(game->barcodes, *b);
+      da_append(game->barcodes, b);
       b = generate_qr_barcode(1);
       b->tint = WHITE;
-      da_append(game->barcodes, *b);
+      da_append(game->barcodes, b);
     }
   }
 }
@@ -160,25 +159,23 @@ void handle_gm_1p_infinite(Scan *scan, Game *game) {
 }
 
 void init_gm_2p_versus(Game *game) {
-  Barcode *b = generate_qr_barcode(1);
-  b->tint = WHITE;
-  da_append(game->barcodes, *b);
-
-  b = generate_qr_barcode(1);
-  b->tint = WHITE; 
-  da_append(game->barcodes, *b);
+  for (size_t i = 0; i < 100; ++i) {
+    Barcode *b = generate_qr_barcode(1);
+    b->tint = WHITE; 
+    da_append(game->barcodes, b);
+  }
 }
 
 void init_gm_1p_speed_run(Game *game) {
   Barcode *b = generate_qr_barcode(1);
   b->tint = WHITE;
-  da_append(game->barcodes, *b);
+  da_append(game->barcodes, b);
 }
 
 void init_gm_1p_infinite(Game *game) {
   Barcode *b = generate_qr_barcode(1);
   b->tint = WHITE;
-  da_append(game->barcodes, *b);
+  da_append(game->barcodes, b);
 }
 
 void update_playing(Game *game) {
@@ -186,7 +183,9 @@ void update_playing(Game *game) {
   if (IsKeyPressed(KEY_ESCAPE)) {
     game->game_state = GS_MENU;
   } else {
-    
+    if (game->round_timer == NULL)
+      game->round_timer = create_timer(TT_COUNT_DOWN, game->default_round_time_secs);
+    handle_timer(game->round_timer);
     Scans *scans = collect_scans(game->scan_buffer); 
     if (scans->count > 0) {
       for (size_t i = 0; i < scans->count; ++i) {
@@ -200,7 +199,8 @@ void update_playing(Game *game) {
       }
     }
 
-    da_foreach(Barcode, b, game->barcodes) {
+    for (size_t i = 0; i < game->barcodes->count; ++i) {
+      Barcode *b = game->barcodes->items[i];
       if (b->living) update_barcode(b);
     }
 
@@ -214,6 +214,7 @@ void draw_gm_2p_versus(Game *game) {
   }
   DrawTextEx(game->player_font, temp_sprintf("Player 1 Score: %d", game->p1->score), (Vector2){.x=50,.y=100}, 28, 1, RAYWHITE);
   DrawTextEx(game->player_font, temp_sprintf("Player 2 Score: %d", game->p2->score), (Vector2){.x=50,.y=150}, 28, 1, RAYWHITE);
+
 }
 
 void draw_gm_1p_speed_run(Game *game) {
@@ -236,7 +237,8 @@ void draw_playing(Game *game) {
     default: nob_log(ERROR, "Unhandled game mode (draw_playing) %d %s", game->game_mode, get_game_mode_text(game->game_mode));
   } 
   
-  da_foreach(Barcode, b, game->barcodes) {
+  for (size_t i = 0; i < game->barcodes->count; ++i) {
+    Barcode *b = game->barcodes->items[i]; 
     if (b->living) draw_barcode(*b);
   }
 
@@ -272,7 +274,6 @@ bool draw_menu(Game *game) {
   start.pos = (Vector2) { .x = GetScreenWidth()/2-get_button_width(start, game->item_font)/2, .y = y };
   if (draw_button(start, game->item_font)) {
     if (left_clicked) {
-      init_game(game);
       game->game_state = GS_PLAYING;
     }
   }
@@ -465,6 +466,8 @@ int main() {
   game.game_mode = GM_2P_VERSUS;
   game.round_time_secs = 60;
 
+  init_gm_2p_versus(&game);
+
   while (!WindowShouldClose()) {
     if (game.game_state == GS_PLAYING) {
       update_playing(&game);
@@ -478,7 +481,8 @@ int main() {
     }
   }
 
-  da_foreach(Barcode, b, game.barcodes) {
+  for (size_t i = 0; i < game.barcodes->count; ++i) {
+    Barcode *b = game.barcodes->items[i]; 
     UnloadTexture(b->tex);
   }
 

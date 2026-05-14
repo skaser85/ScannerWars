@@ -23,7 +23,7 @@ typedef struct {
 } Barcode;
 
 typedef struct {
-  Barcode *items;
+  Barcode **items;
   size_t capacity;
   size_t count;
 } Barcodes;

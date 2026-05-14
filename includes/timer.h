@@ -20,6 +20,7 @@ bool timer_done(Timer timer);
 double timer_get_elapsed(Timer timer);
 Timer *alloc_timer();
 const char *get_timer_text(Timer timer, size_t padding_amt);
-void handle_timer(Timer *timer, double default_timer_lifetime);
+Timer *create_timer(TimerType tt, double lifetime);
+void handle_timer(Timer *timer);
 
 #endif // TIMER_H

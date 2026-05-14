@@ -28,12 +28,14 @@ const char *get_timer_text(Timer timer, size_t padding_amt) {
   return temp_sprintf(format, timer_get_elapsed(timer));
 }
 
-void handle_timer(Timer *timer, double default_timer_lifetime) {
-  if (timer == NULL) {
-    timer = alloc_timer();
-    timer->timer_type = TT_COUNT_DOWN;
-    timer_start(timer, default_timer_lifetime);
-  }
+Timer *create_timer(TimerType tt, double lifetime) {
+  Timer *timer = alloc_timer();
+  timer->timer_type = tt;
+  timer_start(timer, lifetime);
+  return timer;
+}
+
+void handle_timer(Timer *timer) {
   if (timer_done(*timer)) {
     timer = NULL;
   }
