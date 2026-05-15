@@ -21,6 +21,7 @@ Timer *alloc_timer() {
 }
 
 const char *get_timer_text(Timer timer, size_t padding_amt) {
+  if (timer.timer_type == TT_NONE) return NULL;
   const char *format = temp_sprintf("%%.%ldf", padding_amt);
   // "%.0f"
   if (timer.timer_type == TT_COUNT_DOWN)
@@ -28,10 +29,9 @@ const char *get_timer_text(Timer timer, size_t padding_amt) {
   return temp_sprintf(format, timer_get_elapsed(timer));
 }
 
-Timer *create_timer(TimerType tt, double lifetime) {
+Timer *create_timer(TimerType tt) {
   Timer *timer = alloc_timer();
   timer->timer_type = tt;
-  timer_start(timer, lifetime);
   return timer;
 }
 

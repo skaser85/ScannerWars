@@ -5,6 +5,7 @@
 #include "nob.h"
 
 typedef enum {
+  TT_NONE,
   TT_COUNT_DOWN,
   TT_COUNT_UP
 } TimerType;
@@ -20,7 +21,7 @@ bool timer_done(Timer timer);
 double timer_get_elapsed(Timer timer);
 Timer *alloc_timer();
 const char *get_timer_text(Timer timer, size_t padding_amt);
-Timer *create_timer(TimerType tt, double lifetime);
+Timer *create_timer(TimerType tt);
 void handle_timer(Timer *timer);
 
 #endif // TIMER_H

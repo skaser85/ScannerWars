@@ -43,6 +43,13 @@ typedef enum {
 } GameMode;
 
 typedef struct {
+  GameMode game_mode;
+  double round_time_secs;
+  TimerType tt;
+  size_t initial_barcode_count;
+} Settings;
+
+typedef struct {
   GameState game_state;
   Barcodes *barcodes;
   ParticlesCollection *particles;
@@ -61,7 +68,7 @@ typedef struct {
   GameMode game_mode;
   Colors colors;
   size_t round_time_secs;
-  size_t default_round_time_secs;
+  Settings *settings;
 } Game;
 
 const char *get_game_mode_text(GameMode gm) {
@@ -79,6 +86,37 @@ Player *alloc_player() {
   memset(p, 0, sizeof(*p));
 
   return p;
+}
+
+Settings *alloc_settings() {
+  Settings *s = (Settings*)malloc(sizeof(Settings));
+  memset(s, 0, sizeof(*s));
+
+  return s;
+}
+
+Settings *get_settings(GameMode gm) {
+  Settings *s = alloc_settings();
+  s->game_mode = gm; 
+  switch (gm) {
+  case GM_2P_VERSUS: {
+    s->round_time_secs = 0;
+    s->tt = TT_COUNT_UP;
+    s->initial_barcode_count = 50;
+  } break;
+  case GM_1P_SPEED_RUN: {
+    s->round_time_secs = 0;
+    s->tt = TT_COUNT_UP;
+    s->initial_barcode_count = 10;
+  } break;
+  case GM_1P_INFINITE: {
+    s->round_time_secs = 0;
+    s->tt = TT_NONE;
+    s->initial_barcode_count = 10;
+  } break;
+  default: {}
+  }
+  return s;
 }
 
 void init_game(Game *game) {
@@ -102,7 +140,6 @@ void init_game(Game *game) {
   }
 
   game->round_timer = NULL;
-  game->default_round_time_secs = 60;
 
   game->scan_buffer = alloc_string_builder();
 
@@ -159,7 +196,8 @@ void handle_gm_1p_infinite(Scan *scan, Game *game) {
 }
 
 void init_gm_2p_versus(Game *game) {
-  for (size_t i = 0; i < 100; ++i) {
+  game->settings = get_settings(GM_2P_VERSUS);
+  for (size_t i = 0; i < game->settings->initial_barcode_count; ++i) {
     Barcode *b = generate_qr_barcode(1);
     b->tint = WHITE; 
     da_append(game->barcodes, b);
@@ -167,15 +205,21 @@ void init_gm_2p_versus(Game *game) {
 }
 
 void init_gm_1p_speed_run(Game *game) {
-  Barcode *b = generate_qr_barcode(1);
-  b->tint = WHITE;
-  da_append(game->barcodes, b);
+  game->settings = get_settings(GM_1P_SPEED_RUN);
+  for (size_t i = 0; i < game->settings->initial_barcode_count; ++i) {
+    Barcode *b = generate_qr_barcode(1);
+    b->tint = WHITE; 
+    da_append(game->barcodes, b);
+  }
 }
 
 void init_gm_1p_infinite(Game *game) {
-  Barcode *b = generate_qr_barcode(1);
-  b->tint = WHITE;
-  da_append(game->barcodes, b);
+  game->settings = get_settings(GM_1P_INFINITE);
+  for (size_t i = 0; i < game->settings->initial_barcode_count; ++i) {
+    Barcode *b = generate_qr_barcode(1);
+    b->tint = WHITE; 
+    da_append(game->barcodes, b);
+  }
 }
 
 void update_playing(Game *game) {
@@ -183,8 +227,10 @@ void update_playing(Game *game) {
   if (IsKeyPressed(KEY_ESCAPE)) {
     game->game_state = GS_MENU;
   } else {
-    if (game->round_timer == NULL)
-      game->round_timer = create_timer(TT_COUNT_DOWN, game->default_round_time_secs);
+    if (game->round_timer == NULL) {
+      game->round_timer = create_timer(game->settings->tt);
+      timer_start(game->round_timer, game->settings->round_time_secs);
+    }
     handle_timer(game->round_timer);
     Scans *scans = collect_scans(game->scan_buffer); 
     if (scans->count > 0) {
@@ -214,15 +260,21 @@ void draw_gm_2p_versus(Game *game) {
   }
   DrawTextEx(game->player_font, temp_sprintf("Player 1 Score: %d", game->p1->score), (Vector2){.x=50,.y=100}, 28, 1, RAYWHITE);
   DrawTextEx(game->player_font, temp_sprintf("Player 2 Score: %d", game->p2->score), (Vector2){.x=50,.y=150}, 28, 1, RAYWHITE);
-
 }
 
 void draw_gm_1p_speed_run(Game *game) {
-  UNUSED(game);
+  if (game->round_timer) {
+    DrawText(get_timer_text(*game->round_timer, 0), GetScreenWidth()-200, 100, 64, WHITE);
+  }
+  DrawTextEx(game->player_font, temp_sprintf("Barcodes captured: %d", game->p1->score), (Vector2){.x=50,.y=100}, 28, 1, RAYWHITE);
 }
 
 void draw_gm_1p_infinite(Game *game) {
-  UNUSED(game);
+  if (game->round_timer) {
+    DrawText(get_timer_text(*game->round_timer, 0), GetScreenWidth()-200, 100, 64, WHITE);
+  }
+  DrawTextEx(game->player_font, temp_sprintf("Barcodes captured: %d", game->p1->score), (Vector2){.x=50,.y=100}, 28, 1, RAYWHITE);
+
 }
 
 void draw_playing(Game *game) {
@@ -278,7 +330,7 @@ bool draw_menu(Game *game) {
     }
   }
 
-
+  /*
   y = start.pos.y + get_button_height(start, game->item_font) + game->default_button_config.pad_y*4;
   Stepper round_time_stepper = {0};
   round_time_stepper.text = temp_sprintf("Round Time (sec): %03ld", game->round_time_secs);
@@ -292,8 +344,9 @@ bool draw_menu(Game *game) {
       if (round_time_stepper.decr) game->round_time_secs -= 1;
     }
   }
+  */
   
-  y = round_time_stepper.pos.y + game->item_font.baseSize + game->default_button_config.pad_y*4;
+  y = start.pos.y + game->item_font.baseSize + game->default_button_config.pad_y*4;
   Button resume = {0};
   resume.config = game->default_button_config;
   resume.text = "Resume";
